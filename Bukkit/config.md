@@ -4,11 +4,11 @@ Most things are already explained in the default config.yml, but this page is fo
 <hr><b>Before you start...</b><br>
 Lists can be specified using 2 ways:<br>
 <b>Key:</b>
-&#45; 'item1'
-&#45; 'item2'
-<b>Key: </b>['item1', 'item2']
+&#45; 'item1'<br>
+&#45; 'item2'<br>
+<b>Key: </b>['item1', 'item2']<br>
 They are both functional, but I recommend the first approach when using longer texts.
-<hr><b>Password</b>
+<hr><b>Password</b><br>
 The password required for logging in to this server.
 Groups can be used instead of this, which are quite a bit more customisable
 <hr><b>Permission-Defaults</b><br>

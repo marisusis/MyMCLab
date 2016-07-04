@@ -1,0 +1,24 @@
+name: MyMCLab
+version: 1.0.0
+main: me.megamichiel.mymclab.bukkit.MyMCLabPlugin
+author: megamichiel
+depend: [AnimationLib]
+
+commands:
+  mymclab:
+    description: Plugin command
+    usage: /<command>
+
+permissions:
+  mymclab.*:
+    description: Gives access to all mymclab commands
+    children:
+      mymclab.reload: true
+      mymclab.clientlist: true
+      mymclab.seeupdate: true
+  mymclab.reload:
+    description: Reload the plugin using /mymclab reload
+  mymclab.clientlist:
+    description: View a list of connected clients with connection information.
+  mymclab.seeupdate:
+    description: Receive a message on join if the plugin has an update

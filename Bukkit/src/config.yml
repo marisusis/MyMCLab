@@ -1,0 +1,105 @@
+#The password needed to enter the server. Can be very long (> 1 million characters, not recommended though)
+password: password
+
+#You can also use groups to specify specific permissions. If this is set, 'password' is ignored
+#groups:
+#  default:
+#    password: password
+#    permissions:
+#    - '-default.view.console'
+
+#The delay (in seconds) between each time player info is sent
+stats-refresh-delay: 2
+#The player info section. Each new entry requires a dash (-) in front of it, like below
+player-info:
+  #The text to display on the left side
+- text: '&aHealth'
+  #The type of the button. Can be either text, progress-circle or progress-bar
+  type: 'progress-circle'
+  #The progress, only has effect on progress-circle and progress-bar
+  value: '%player_health%'
+  #The max progress
+  max: '%player_max_health%'
+  #The color of the progress bar (RGB value)
+  progress-color: '00FF00'
+  #The color that the progress bar has at the part that isn't covered by value
+  empty-color: 'FF0000'
+
+- text: '&eHunger'
+  type: 'progress-bar'
+  value: '%player_food_level%'
+  max: '20'
+  progress-color: 'FFA74F'
+  empty-color: 'AA000000'
+
+- text: '&aGive Money'
+  type: text
+  #Prompt the client to enter values. If this section is not specified,
+  #The client is not prompted and the commands are executed instantly
+  prompts:
+    #The ID of the value, to be used in {prompt_<id>}
+    amount:
+      #The name that shows up at the input box, defaults to the id
+      name: Amount
+      #The input type. Can be either text, number, decimal-number, checkbox, selection or child
+      type: 'decimal-number'
+  #The commands to execute when this button is clicked.
+  click-commands:
+  - 'eco give %player_name% {prompt_amount}'
+  #Send a 'Toast' to the client (A little balloon containing some text).
+  #This is executed at the same time click-commands are called
+  make-toast: 'Gave %player_name% ${prompt_amount}'
+
+- text: '&cKick %player_name%'
+  prompts:
+    reason:
+      name: Reason
+      type: text
+  click-commands:
+  - 'kick %player_name% {prompt_reason}'
+  make-toast: 'Kicked %player_name%'
+
+- text: '&6Set Op'
+  prompts:
+    #A checkbox prompt example.
+    #The value at 'checked' specifies the value that it returns when the box is checked
+    #The 'unchecked' value does the opposite of 'checked'
+    #These values both support placeholders
+    command:
+      name: Op
+      type: checkbox
+      checked: op
+      unchecked: deop
+    #A 'child' prompt request. This is not sent to the client, but is used to map responses to other values.
+    #Under 'values' you put the keys mapped to the values.
+    response:
+      type: child
+      parent: command
+      values:
+        op: '%player_name% is now op!'
+        deop: '%player_name% is no longer op!'
+  click-commands:
+  - '{prompt_command} %player_name%'
+  make-toast: '{prompt_response}'
+
+#Server information, works exactly the same as player info.
+#Make sure to not use placeholders that require a player here
+server-info:
+- text: '&6RAM &a(%server_ram_used%/%server_ram_max%)'
+  type: 'progress-circle'
+  value: '%server_ram_used%'
+  max: '%server_ram_max%'
+  prompts:
+    type:
+      name: Type
+      type: selection
+      values: [Used, Free, Total, Max]
+    amount:
+      type: child
+      parent: type
+      values:
+        Used: '%server_ram_used%'
+        Free: '%server_ram_free%'
+        Total: '%server_ram_total%'
+        Max: '%server_ram_max%'
+  make-toast: '{prompt_type} RAM: {prompt_amount}'
