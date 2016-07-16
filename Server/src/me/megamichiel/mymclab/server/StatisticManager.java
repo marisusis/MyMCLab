@@ -1,56 +1,64 @@
-package me.megamichiel.mymclab.bukkit;
+package me.megamichiel.mymclab.server;
 
-import me.megamichiel.animationlib.YamlConfig;
-import me.megamichiel.animationlib.placeholder.IPlaceholder;
-import me.megamichiel.animationlib.placeholder.PlaceholderContext;
-import me.megamichiel.animationlib.placeholder.StringBundle;
 import me.megamichiel.mymclab.api.Client;
-import me.megamichiel.mymclab.bukkit.util.PlayerMap;
 import me.megamichiel.mymclab.io.ProtocolOutput;
 import me.megamichiel.mymclab.packet.player.PromptRequestPacket;
 import me.megamichiel.mymclab.packet.player.PromptResponsePacket;
+import me.megamichiel.mymclab.packet.player.StatisticClickPacket;
 import me.megamichiel.mymclab.packet.player.StatisticPacket;
 import me.megamichiel.mymclab.perm.CustomPermission;
 import me.megamichiel.mymclab.perm.DefaultPermission;
 import me.megamichiel.mymclab.perm.IPermission;
+import me.megamichiel.mymclab.server.util.DynamicString;
+import me.megamichiel.mymclab.server.util.MapConfig;
 import me.megamichiel.mymclab.util.ColoredText;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.entity.Player;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.function.Function;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static me.megamichiel.mymclab.packet.player.StatisticPacket.StatisticField.*;
 import static me.megamichiel.mymclab.packet.player.StatisticPacket.StatisticItem;
 import static me.megamichiel.mymclab.packet.player.StatisticPacket.StatisticItemAction;
 
-public class StatisticManager {
+public abstract class StatisticManager {
 
     private static final Pattern PROMPT_PATTERN = Pattern.compile("\\{prompt_([^}]+)\\}");
 
-    private final MyMCLabPlugin plugin;
-    private final StatisticTemplate[] playerValues, serverValues;
+    protected final ServerHandler server;
+    private StatisticTemplate[] playerValues, serverValues;
 
-    StatisticManager(MyMCLabPlugin plugin, ConfigurationSection section) {
-        this.plugin = plugin;
-        playerValues = loadConfig(plugin, "Player", YamlConfig.getConfigurationList(section, "player-info"));
-        serverValues = loadConfig(plugin, "Server", YamlConfig.getConfigurationList(section, "server-info"));
+    protected StatisticManager(ServerHandler server) {
+        this.server = server;
+    }
+    
+    public abstract Object createStringContext();
+    protected abstract DynamicString parseString(String str);
+    protected DynamicString[] parseStrings(String[] strings) {
+        DynamicString[] result = new DynamicString[strings.length];
+        for (int i = 0; i < strings.length; i++)
+            result[i] = parseString(strings[i]);
+        return result;
+    }
+    
+    protected abstract Object getPlayer(String name);
+    protected abstract String getName(Object player);
+    protected abstract Collection<?> getPlayers();
+    protected abstract <V> Map<Object, V> createPlayerMap();
+
+    public void load(MapConfig config) {
+        playerValues = loadConfig(server, "Player", config.getSectionList("player-info"));
+        serverValues = loadConfig(server, "Server", config.getSectionList("server-info"));
     }
 
     public void handlePrompt(Client client, PromptResponsePacket packet) {
         String playerName = packet.getPlayer();
-        Player player;
-        if (playerName != null) player = Bukkit.getOnlinePlayers().stream()
-                .filter(p -> p.getName().equals(playerName)).findAny().orElse(null);
+        Object player;
+        if (playerName != null) player = getPlayer(playerName);
         else player = null;
         if (player != null || playerName == null) {
             StatisticTemplate template = (playerName == null ? serverValues : playerValues)[packet.getItemIndex()];
-            PlaceholderContext context = PlaceholderContext.create(plugin);
+            Object context = createStringContext();
             Map<String, String> map = template.promptValues.get();
             for (PromptResponsePacket.PromptResponse response : packet.getResponses()) {
                 DefaultPromptRequest request = template.sentPrompts[response.getIndex()];
@@ -69,80 +77,80 @@ public class StatisticManager {
                     if (result != null) map.put(child.id, result);
                 }
             }
-            for (StringBundle command : template.commands)
-                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command.toString(player, context));
+            for (DynamicString command : template.commands)
+                server.handleCommand(command.toString(player, context), false);
             if (template.toast != null) client.makeToast(template.toast.toString(player, context));
             map.clear();
         }
     }
 
-    public void handleClick(Client client, String name, int index) {
-        Player player = null;
-        if (name != null) player = Bukkit.getOnlinePlayers().stream()
-                    .filter(p -> p.getName().equals(name)).findAny().orElse(null);
+    public void handleClick(Client client, StatisticClickPacket packet) {
+        String name = packet.getName();
+        int index = packet.getItemIndex();
+        Object player = null;
+        if (name != null) player = getPlayer(name);
         if (player != null || name == null) {
             StatisticTemplate template =
                     (name == null ? serverValues : playerValues)[index];
             if ((template.permission != null && !client.hasPermission(template.permission)) ||
                     (template.clickPermission != null && !client.hasPermission(template.clickPermission)))
                 return;
-            PlaceholderContext context = PlaceholderContext.create(plugin);
+            Object context = createStringContext();
             if (template.sentPrompts != null) {
                 client.sendPacket(new PromptRequestPacket(name,
-                                ChatColor.stripColor(template.text.toString(player, context)),
+                                ColoredText.stripChatColors(template.text.toString(player, context)),
                                 index, template.sentPrompts));
                 return;
             }
-            for (StringBundle command : template.commands)
-                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command.toString(player, context));
+            for (DynamicString command : template.commands)
+                server.handleCommand(command.toString(player, context), false);
             if (template.toast != null) client.makeToast(template.toast.toString(player, context));
         }
     }
 
-    public StatisticPacket createPlayerInfoPacket(Client client,
+    public StatisticPacket createStatisticPacket(Client client,
                                                   StatisticItemAction action) {
         List<StatisticPacket.StatisticInfo> info = new ArrayList<>();
 
-        PlaceholderContext context = PlaceholderContext.create(plugin);
+        Object context = createStringContext();
 
         boolean add = action == StatisticItemAction.ADD;
 
         if (client.hasPermission(DefaultPermission.VIEW_SERVER_INFO))
-            info.add(createPlayerInfo(client, null, context, add));
+            info.add(createStatistic(client, null, context, add));
 
         if (client.hasPermission(DefaultPermission.VIEW_PLAYERS))
-            Bukkit.getOnlinePlayers().forEach(player -> info.add(createPlayerInfo(client, player, context, add)));
+            getPlayers().forEach(player -> info.add(createStatistic(client, player, context, add)));
 
         return new StatisticPacket(action, info);
     }
 
-    StatisticPacket.StatisticInfo createPlayerInfo(Client client, Player player, PlaceholderContext context, boolean add) {
+    public StatisticPacket.StatisticInfo createStatistic(Client client, Object player, Object context, boolean add) {
         StatisticTemplate[] templates = player != null ? playerValues : serverValues;
         List<StatisticItem> items = new ArrayList<>(templates.length);
-        for (StatisticTemplate template : templates) {
+        for (StatisticTemplate template : templates)
             if (template.permission == null || client.hasPermission(template.permission))
                 items.add(template.createItem(player, context, add));
-        }
-        return new StatisticPacket.StatisticInfo(player == null ? null : player.getName(), items);
+        return new StatisticPacket.StatisticInfo(player == null ? null : getName(player), items);
     }
 
     class StatisticTemplate {
 
         final StatisticPacket.StatisticType type;
-        final StringBundle text;
-        final StringBundle[] commands;
-        final StringBundle toast;
+        final DynamicString text;
+        final DynamicString[] commands;
+        final DynamicString toast;
         final IPermission permission, clickPermission;
 
         final DefaultPromptRequest[] prompts, sentPrompts;
         final ChildPromptRequest[] childPrompts;
         final ThreadLocal<Map<String, String>> promptValues = ThreadLocal.withInitial(HashMap::new);
 
-        final Map<Player, StatisticItem> values = new PlayerMap<>(plugin);
+        final Map<Object, StatisticItem> values = createPlayerMap();
 
-        StatisticTemplate(StatisticPacket.StatisticType type, StringBundle text,
+        StatisticTemplate(StatisticPacket.StatisticType type, DynamicString text,
                           DefaultPromptRequest[] prompts,
-                          String[] commands, StringBundle toast, IPermission permission,
+                          String[] commands, DynamicString toast, IPermission permission,
                           IPermission clickPermission) {
             this.type = type;
             this.text = text;
@@ -158,24 +166,17 @@ public class StatisticManager {
                 this.sentPrompts = sentPrompts.toArray(new DefaultPromptRequest[sentPrompts.size()]);
                 this.childPrompts = childPrompts.toArray(new ChildPromptRequest[childPrompts.size()]);
             } else this.sentPrompts = this.childPrompts = null;
-            this.commands = StringBundle.parse(plugin, commands);
+            this.commands = parseStrings(commands);
             this.toast = toast;
             this.permission = permission;
             this.clickPermission = clickPermission;
             if (prompts != null) {
-                Function<Matcher, IPlaceholder<?>> func = matcher -> {
-                    final String name = matcher.group(1);
-                    return (IPlaceholder<String>) (nagger, player) -> {
-                        StringBundle bundle = StringBundle.parse(nagger, promptValues.get().get(name));
-                        return bundle == null ? null : bundle.toString(player);
-                    };
-                };
-                for (StringBundle command : this.commands) command.replace(PROMPT_PATTERN, func::apply);
-                if (toast != null) toast.replace(PROMPT_PATTERN, func::apply);
+                for (DynamicString command : this.commands) command.replacePrompts(PROMPT_PATTERN, promptValues.get());
+                if (toast != null) toast.replacePrompts(PROMPT_PATTERN, promptValues.get());
             }
         }
 
-        StatisticItem createItem(Player player, PlaceholderContext context, boolean add) {
+        StatisticItem createItem(Object player, Object context, boolean add) {
             ColoredText text = ColoredText.parse(this.text.toString(player, context), false);
             StatisticItem current = values.get(player);
             if (!add && current != null) {
@@ -197,14 +198,14 @@ public class StatisticManager {
 
     private class ProgressStatisticTemplate extends StatisticTemplate {
 
-        private final StringBundle value, max;
+        private final DynamicString value, max;
         private final int progressColor, emptyColor;
 
-        ProgressStatisticTemplate(StatisticPacket.StatisticType type, StringBundle text,
+        ProgressStatisticTemplate(StatisticPacket.StatisticType type, DynamicString text,
                                   DefaultPromptRequest[] prompts,
-                                  String[] commands, StringBundle toast,
+                                  String[] commands, DynamicString toast,
                                   IPermission permission, IPermission clickPermission,
-                                  StringBundle value, StringBundle max,
+                                  DynamicString value, DynamicString max,
                                   int progressColor, int emptyColor) {
             super(type, text, prompts, commands, toast, permission, clickPermission);
             this.value = value;
@@ -214,7 +215,7 @@ public class StatisticManager {
         }
 
         @Override
-        StatisticItem createItem(Player player, PlaceholderContext context, boolean add) {
+        StatisticItem createItem(Object player, Object context, boolean add) {
             ColoredText text = ColoredText.parse(this.text.toString(player, context), false);
             double value, max;
             try {
@@ -248,23 +249,23 @@ public class StatisticManager {
         }
     }
 
-    private DefaultPromptRequest[] parsePrompts(ConfigurationSection sec) {
+    private DefaultPromptRequest[] parsePrompts(MapConfig sec) {
         if (sec == null) return null;
         List<DefaultPromptRequest> values = new ArrayList<>();
-        for (String id : sec.getKeys(false)) {
-            ConfigurationSection section = sec.getConfigurationSection(id);
+        for (String id : sec.keys()) {
+            MapConfig section = sec.getSection(id);
             if (section == null) continue; // Not a section
             String typeString = section.getString("type", "text");
             if ("child".equalsIgnoreCase(typeString)) {
                 String parent = section.getString("parent");
                 if (parent == null) continue;
-                ConfigurationSection childValues = section.getConfigurationSection("values");
+                MapConfig childValues = section.getSection("values");
                 if (childValues == null) continue;
-                Map<StringBundle, StringBundle> map = new HashMap<>();
-                for (String key : childValues.getKeys(false)) {
+                Map<DynamicString, DynamicString> map = new HashMap<>();
+                for (String key : childValues.keys()) {
                     String value = childValues.getString(key);
                     if (value != null)
-                        map.put(StringBundle.parse(plugin, key), StringBundle.parse(plugin, value));
+                        map.put(parseString(key), parseString(value));
                 }
                 values.add(new ChildPromptRequest(id, parent.toLowerCase(Locale.US), map));
                 continue;
@@ -273,7 +274,7 @@ public class StatisticManager {
             try {
                 type = PromptRequestPacket.PromptType.valueOf(typeString.toUpperCase(Locale.US).replace('-', '_'));
             } catch (IllegalArgumentException ex) {
-                plugin.getLogger().warning("Illegal prompt type: " + typeString);
+                server.warning("Illegal prompt type: " + typeString);
                 continue;
             }
             String name = section.getString("name", id);
@@ -309,13 +310,13 @@ public class StatisticManager {
 
     private class CheckBoxPromptRequest extends DefaultPromptRequest {
 
-        private final StringBundle checked, unchecked;
+        private final DynamicString checked, unchecked;
 
         CheckBoxPromptRequest(String id, String name, PromptRequestPacket.PromptType type,
                                      String checked, String unchecked) {
             super(id, name, type);
-            this.checked = StringBundle.parse(plugin, checked == null ? "yes" : checked);
-            this.unchecked = StringBundle.parse(plugin, unchecked == null ? "no" : unchecked);
+            this.checked = parseString(checked == null ? "yes" : checked);
+            this.unchecked = parseString(unchecked == null ? "no" : unchecked);
         }
     }
 
@@ -339,28 +340,28 @@ public class StatisticManager {
     private class ChildPromptRequest extends DefaultPromptRequest {
 
         private final String parent;
-        private final Map<StringBundle, StringBundle> values;
+        private final Map<DynamicString, DynamicString> values;
 
-        ChildPromptRequest(String id, String parent, Map<StringBundle, StringBundle> values) {
+        ChildPromptRequest(String id, String parent, Map<DynamicString, DynamicString> values) {
             super(id, id, null);
             this.parent = parent;
             this.values = values;
         }
 
-        String get(Player player, String key, PlaceholderContext context) {
-            for (Map.Entry<StringBundle, StringBundle> entry : values.entrySet())
+        String get(Object player, String key, Object context) {
+            for (Map.Entry<DynamicString, DynamicString> entry : values.entrySet())
                 if (entry.getKey().toString(player, context).equals(key))
                     return entry.getValue().toString(player, context);
             return null;
         }
     }
 
-    private StatisticTemplate[] loadConfig(MyMCLabPlugin plugin, String id,
-                                           List<ConfigurationSection> list) {
+    private StatisticTemplate[] loadConfig(ServerHandler server, String id,
+                                           List<MapConfig> list) {
         List<StatisticTemplate> values = new ArrayList<>();
 
         for (int i = 0; i < list.size(); i++) {
-            ConfigurationSection section = list.get(i);
+            MapConfig section = list.get(i);
 
             StatisticPacket.StatisticType type;
             try {
@@ -368,34 +369,34 @@ public class StatisticManager {
                         section.getString("type", "TEXT")
                                 .toUpperCase(Locale.US).replace('-', '_'));
             } catch (IllegalArgumentException ex) {
-                plugin.nag(id + " info " + (i + 1) + " has an invalid type: " + section.getString("type"));
+                server.warning(id + " info " + (i + 1) + " has an invalid type: " + section.getString("type"));
                 continue;
             }
-            StringBundle text = StringBundle.parse(plugin, section.getString("text"));
+            DynamicString text = parseString(section.getString("text"));
             if (text == null) {
-                plugin.nag(id + " info " + (i + 1) + " doesn't contain 'text'!");
+                server.warning(id + " info " + (i + 1) + " doesn't contain 'text'!");
                 continue;
             }
             text.colorAmpersands();
 
-            DefaultPromptRequest[] prompts = parsePrompts(section.getConfigurationSection("prompts"));
+            DefaultPromptRequest[] prompts = parsePrompts(section.getSection("prompts"));
             List<String> commandsList = section.getStringList("click-commands");
             if (commandsList.isEmpty() && section.isString("click-commands"))
                 commandsList.add(section.getString("click-commands"));
             String[] commands = commandsList.toArray(new String[commandsList.size()]);
-            StringBundle toast = StringBundle.parse(plugin, section.getString("make-toast"));
+            DynamicString toast = parseString(section.getString("make-toast"));
             IPermission permission = CustomPermission.resolvePermission(section.getString("permission")),
                         clickPermission = CustomPermission.resolvePermission(section.getString("click-permission"));
             StatisticTemplate template;
             if (type != StatisticPacket.StatisticType.TEXT) {
-                final StringBundle value = StringBundle.parse(plugin, section.getString("value")),
-                        max = StringBundle.parse(plugin, section.getString("max"));
+                final DynamicString value = parseString(section.getString("value")),
+                        max = parseString(section.getString("max"));
                 if (value == null) {
-                    plugin.nag(id + " info " + (i + 1) + " doesn't contain 'value'");
+                    server.warning(id + " info " + (i + 1) + " doesn't contain 'value'");
                     continue;
                 }
                 if (max == null) {
-                    plugin.nag(id + " info " + (i + 1) + " doesn't contain 'max'!");
+                    server.warning(id + " info " + (i + 1) + " doesn't contain 'max'!");
                     continue;
                 }
                 int progressColor, emptyColor;

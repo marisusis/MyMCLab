@@ -3,6 +3,7 @@ package me.megamichiel.mymclab.packet.messaging;
 import me.megamichiel.mymclab.io.ProtocolInput;
 import me.megamichiel.mymclab.io.ProtocolOutput;
 import me.megamichiel.mymclab.packet.Packet;
+import me.megamichiel.mymclab.perm.DefaultPermission;
 
 import java.io.IOException;
 
@@ -37,6 +38,15 @@ public class RawMessagePacket extends Packet {
     protected void encode(ProtocolOutput data) throws IOException {
         data.writeEnum(type);
         data.writeString(message);
+    }
+
+    @Override
+    public DefaultPermission getPermission() {
+        switch (type) {
+            case CHAT: return DefaultPermission.INPUT_CHAT;
+            case COMMAND: return DefaultPermission.INPUT_COMMANDS;
+            default: return null;
+        }
     }
 
     public enum RawMessageType {

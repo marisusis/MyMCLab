@@ -1,5 +1,7 @@
 package me.megamichiel.mymclab.perm;
 
+import java.util.function.Predicate;
+
 /**
  * A group where clients can be added to to give them certain permissions
  */
@@ -7,9 +9,9 @@ public class Group {
 
     private final String name;
     private final byte[] password;
-    private final PermissionPredicate permissionChecker;
+    private final Predicate<IPermission> permissionChecker;
 
-    public Group(String name, byte[] password, PermissionPredicate permissionChecker) {
+    public Group(String name, byte[] password, Predicate<IPermission> permissionChecker) {
         this.name = name;
         this.password = password;
         this.permissionChecker = permissionChecker;
@@ -32,7 +34,7 @@ public class Group {
     /**
      * Returns this group's permission checker
      */
-    public PermissionPredicate getPermissionChecker() {
+    public Predicate<IPermission> getPermissionChecker() {
         return permissionChecker;
     }
 
@@ -42,10 +44,6 @@ public class Group {
      * @param permission the permission to check
      */
     public boolean hasPermission(IPermission permission) {
-        return permissionChecker.apply(permission);
-    }
-
-    public interface PermissionPredicate {
-        boolean apply(IPermission perm);
+        return permissionChecker.test(permission);
     }
 }

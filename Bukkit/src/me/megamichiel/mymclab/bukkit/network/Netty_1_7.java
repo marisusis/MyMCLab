@@ -2,11 +2,12 @@ package me.megamichiel.mymclab.bukkit.network;
 
 import me.megamichiel.mymclab.MyMCLab;
 import me.megamichiel.mymclab.api.ClientListener;
-import me.megamichiel.mymclab.bukkit.MyMCLabPlugin;
 import me.megamichiel.mymclab.io.ByteArrayProtocolOutput;
 import me.megamichiel.mymclab.io.ProtocolInputStream;
 import me.megamichiel.mymclab.packet.Packet;
 import me.megamichiel.mymclab.perm.IPermission;
+import me.megamichiel.mymclab.server.*;
+import me.megamichiel.mymclab.server.util.ChannelWrapper;
 import net.minecraft.util.io.netty.buffer.ByteBuf;
 import net.minecraft.util.io.netty.buffer.ByteBufInputStream;
 import net.minecraft.util.io.netty.buffer.Unpooled;
@@ -17,16 +18,15 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.SocketAddress;
-import java.security.KeyPair;
 import java.util.List;
 import java.util.function.Consumer;
 
-class Netty_1_7 extends NetworkHandler {
+public class Netty_1_7 extends NetworkHandler {
 
     private CustomChild child;
 
-    Netty_1_7(MyMCLabPlugin plugin, KeyPair keyPair) {
-        super(plugin, keyPair);
+    public Netty_1_7(ServerHandler server) {
+        super(server);
     }
 
     @Override
@@ -45,7 +45,7 @@ class Netty_1_7 extends NetworkHandler {
                 }
             }
             if (conn == null) {
-                plugin.getLogger().severe("Couldn't find server's connection handler!");
+                this.server.warning("Couldn't find server's connection handler!");
                 return;
             }
             for (Field f : conn.getClass().getDeclaredFields()) {
@@ -94,41 +94,6 @@ class Netty_1_7 extends NetworkHandler {
         clients.forEach(clientClose);
     }
 
-    private ChannelWrapper wrap(final Channel channel) {
-        return new ChannelWrapper() {
-            @Override
-            public void inEventLoop(Runnable runnable) {
-                if (channel.eventLoop().inEventLoop()) runnable.run();
-                else channel.eventLoop().execute(runnable);
-            }
-
-            @Override
-            public void writeAndFlush(Object object) {
-                channel.writeAndFlush(object);
-            }
-
-            @Override
-            public void writeAndClose(Object object) {
-                channel.writeAndFlush(object).addListener(ChannelFutureListener.CLOSE);
-            }
-
-            @Override
-            public void close() {
-                channel.close();
-            }
-
-            @Override
-            public SocketAddress remoteAddress() {
-                return channel.remoteAddress();
-            }
-
-            @Override
-            public boolean isOpen() {
-                return channel.isOpen();
-            }
-        };
-    }
-
     private class CustomChild extends ChannelInitializer<Channel> {
 
         private final Method initChannel;
@@ -170,18 +135,54 @@ class Netty_1_7 extends NetworkHandler {
 
         private class MyMCLabHandler extends ChannelDuplexHandler {
 
-            private final ChannelWrapper wrapper;
             private final ClientProcessor processor;
 
             MyMCLabHandler(final Channel channel) {
-                processor = new ClientProcessor(plugin, Netty_1_7.this, wrapper = wrap(channel));
+                processor = new ClientProcessor(server, Netty_1_7.this, new ChannelWrapper() {
+                    @Override
+                    public void inEventLoop(Runnable runnable) {
+                        if (channel.eventLoop().inEventLoop()) runnable.run();
+                        else channel.eventLoop().execute(runnable);
+                    }
+
+                    @Override
+                    public void writeAndFlush(Object object) {
+                        channel.writeAndFlush(object);
+                    }
+
+                    @Override
+                    public void writeAndClose(Object object) {
+                        channel.writeAndFlush(object).addListener(ChannelFutureListener.CLOSE);
+                    }
+
+                    @Override
+                    public void close() {
+                        channel.close();
+                    }
+
+                    @Override
+                    public SocketAddress remoteAddress() {
+                        return channel.remoteAddress();
+                    }
+
+                    @Override
+                    public boolean isOpen() {
+                        return channel.isOpen();
+                    }
+
+                    @Override
+                    public void clearHandlers() {
+                        while (channel.pipeline().last() != MyMCLabHandler.this)
+                            channel.pipeline().removeLast();
+                    }
+                });
             }
 
             @Override
             public void channelRead(ChannelHandlerContext ctx, Object o) throws Exception {
                 ByteBuf buf = (ByteBuf) o;
                 ProtocolInputStream stream = new ProtocolInputStream(new ByteBufInputStream(buf));
-                if (processor.validated) {
+                if (processor.isValidated()) {
                     while (stream.available() > 0) processor.handlePacket(stream);
                 } else {
                     buf.markReaderIndex();
@@ -190,46 +191,14 @@ class Netty_1_7 extends NetworkHandler {
                         case BAD_PROTOCOL:
                             buf.resetReaderIndex();
                             super.channelRead(ctx, buf);
-                        case OUTDATED_CLIENT: case OUTDATED_SERVER:
-                            while (ctx.channel().pipeline().last() != this)
-                                ctx.channel().pipeline().removeLast();
-                            ByteArrayProtocolOutput out = new ByteArrayProtocolOutput();
-                            out.write(MyMCLab.HEADER);
-                            out.writeByte(state == ClientProcessor.State.OUTDATED_CLIENT ? -1 : 1);
-                            wrapper.writeAndClose(Unpooled.wrappedBuffer(out.toByteArray()));
-                            break;
                         case LOGIN:
-                            while (ctx.channel().pipeline().last() != this)
-                                ctx.channel().pipeline().removeLast();
-                            out = new ByteArrayProtocolOutput();
-                            out.write(MyMCLab.HEADER);
-                            out.writeByte(0);
-                            byte[] encoded = keyPair.getPublic().getEncoded();
-                            out.writeVarInt(encoded.length);
-                            out.write(encoded);
-                            processor.client = new ClientImpl(wrapper, plugin);
-                            wrapper.writeAndFlush(Unpooled.wrappedBuffer(out.toByteArray()));
                             ctx.channel().closeFuture().addListener((ChannelFutureListener) future -> {
-                                if (processor.client != null && clients.remove(processor.client)) {
+                                if (processor.getClient() != null && clients.remove(processor.getClient())) {
                                     processor.handleClose();
                                     for (ClientListener listener : clientListeners)
-                                        listener.clientDisconnected(processor.client);
+                                        listener.clientDisconnected(processor.getClient());
                                 }
                             });
-                            break;
-                        case BAD_GROUP:
-                            while (ctx.channel().pipeline().last() != this)
-                                ctx.channel().pipeline().removeLast();
-                            processor.client.disconnect("Unknown group!");
-                            break;
-                        case BAD_PASSWORD:
-                            while (ctx.channel().pipeline().last() != this)
-                                ctx.channel().pipeline().removeLast();
-                            processor.client.disconnect("Incorrect password!");
-                            break;
-                        case AUTHENTICATED:
-                            if (processor.networkHandler.handleClientJoin(processor.client))
-                                processor.loginComplete();
                             break;
                     }
                     buf.release();
@@ -241,17 +210,18 @@ class Netty_1_7 extends NetworkHandler {
                 if (o instanceof Packet) {
                     Packet packet = (Packet) o;
                     IPermission perm = packet.getPermission();
-                    if (perm != null && !processor.client.hasPermission(perm))
+                    if (perm != null && !processor.getClient().hasPermission(perm))
                         return;
                     super.write(channelHandlerContext,
                             Unpooled.wrappedBuffer(processor.encodePacket(packet)),
                             channelPromise);
-                } else super.write(channelHandlerContext, o, channelPromise);
+                } else super.write(channelHandlerContext, o instanceof byte[] ?
+                        Unpooled.wrappedBuffer((byte[]) o) : o, channelPromise);
             }
 
             @Override
             public void exceptionCaught(ChannelHandlerContext channelHandlerContext, Throwable throwable) throws Exception {
-                if (processor.validated) plugin.getLogger().warning(throwable.toString());
+                if (processor.isValidated()) server.warning(throwable.toString());
                 else super.exceptionCaught(channelHandlerContext, throwable);
             }
         }

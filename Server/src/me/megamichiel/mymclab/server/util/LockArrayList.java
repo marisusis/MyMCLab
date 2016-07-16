@@ -1,4 +1,4 @@
-package me.megamichiel.mymclab.bukkit.util;
+package me.megamichiel.mymclab.server.util;
 
 import java.util.ArrayList;
 import java.util.concurrent.locks.Lock;

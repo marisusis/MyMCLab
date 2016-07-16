@@ -1,8 +1,8 @@
-package me.megamichiel.mymclab.bukkit.network;
+package me.megamichiel.mymclab.server.util;
 
 import java.net.SocketAddress;
 
-interface ChannelWrapper {
+public interface ChannelWrapper {
 
     void inEventLoop(Runnable runnable);
     void writeAndFlush(Object object);
@@ -10,4 +10,5 @@ interface ChannelWrapper {
     void close();
     SocketAddress remoteAddress();
     boolean isOpen();
+    void clearHandlers();
 }

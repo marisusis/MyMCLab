@@ -1,26 +1,30 @@
 package me.megamichiel.mymclab.bukkit;
 
 import me.megamichiel.animationlib.Nagger;
-import me.megamichiel.animationlib.YamlConfig;
 import me.megamichiel.animationlib.placeholder.PlaceholderContext;
 import me.megamichiel.mymclab.api.Client;
 import me.megamichiel.mymclab.api.ClientListener;
 import me.megamichiel.mymclab.api.MyMCLabServer;
-import me.megamichiel.mymclab.bukkit.network.NetworkHandler;
-import me.megamichiel.mymclab.bukkit.util.LockArrayList;
+import me.megamichiel.mymclab.bukkit.network.Legacy_Handler_Netty;
+import me.megamichiel.mymclab.bukkit.network.Netty_1_7;
+import me.megamichiel.mymclab.bukkit.network.Netty_1_8;
 import me.megamichiel.mymclab.packet.BatchPacket;
-import me.megamichiel.mymclab.packet.KeepAlivePacket;
 import me.megamichiel.mymclab.packet.Packet;
 import me.megamichiel.mymclab.packet.PermissionPacket;
-import me.megamichiel.mymclab.packet.messaging.ErrorPacket;
 import me.megamichiel.mymclab.packet.messaging.MessagePacket;
 import me.megamichiel.mymclab.packet.player.StatisticPacket;
 import me.megamichiel.mymclab.perm.DefaultPermission;
 import me.megamichiel.mymclab.perm.Group;
+import me.megamichiel.mymclab.perm.GroupManager;
+import me.megamichiel.mymclab.server.NetworkHandler;
+import me.megamichiel.mymclab.server.ServerHandler;
+import me.megamichiel.mymclab.server.util.MapConfig;
 import me.megamichiel.mymclab.util.ColoredText;
-import me.megamichiel.mymclab.util.Encryption;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Material;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -35,41 +39,21 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.URL;
 import java.net.URLConnection;
-import java.security.KeyPair;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer, Nagger, Runnable {
+public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer, Nagger {
 
     private static final String DONT_MIND_ME_I_HAVE_NO_USE = "%%__USER__%%";
 
-    private static final MessagePacket.Message[] MESSAGE_BUFFER = new MessagePacket.Message[100];
-    private static final ErrorPacket.Error[] ERROR_BUFFER = new ErrorPacket.Error[100];
-
-    private final KeyPair keyPair = Encryption.generateAsymmetricKey();
-
-    private final NetworkHandler networkHandler = NetworkHandler.determineNetworkHandler(this, keyPair);
-
-    private final LockArrayList<MessagePacket.Message> consoleMessages = new LockArrayList<>(),
-                                                       chatMessages = new LockArrayList<>();
-    private final LockArrayList<ErrorPacket.Error>     errors = new LockArrayList<>();
-
-    private final ConsoleHandler consoleHandler = new ConsoleHandler(consoleMessages, errors);
-
-    private StatisticManager statisticManager;
-    private final GroupsManager groupsManager = new GroupsManager(this);
-
-    private int statsRefreshDelay;
+    private final ServerHandler serverHandler = new BukkitServerHandler(this);
 
     @Override
     public void onEnable() {
-        if (networkHandler == null) {
+        if (serverHandler.getNetworkHandler() == null) {
             String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
             getServer().getConsoleSender().sendMessage(ChatColor.RED + "[MyMCLab] Unsupported version: " + version + ". Please report this version on the plugin page so the author can work on it");
             getServer().getPluginManager().disablePlugin(this);
@@ -77,17 +61,13 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         }
         configFile = new File(getDataFolder(), "config.yml");
         saveDefaultConfig();
-        if (!groupsManager.onEnable()) {
+
+        if (!serverHandler.enable(getConfiguration())) {
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        statisticManager = new StatisticManager(this, getConfig());
-        statsRefreshDelay = getConfig().getInt("stats-refresh-delay", 2);
 
-        consoleHandler.onEnable();
-
-        networkHandler.onEnable();
-        packetTask = getServer().getScheduler().runTaskTimerAsynchronously(this, this, 20L, 20L);
+        packetTask = getServer().getScheduler().runTaskTimerAsynchronously(this, serverHandler, 20L, 20L);
         getServer().getPluginManager().registerEvents(this, this);
         getCommand("mymclab").setExecutor(new MyMCLabCommand(this));
 
@@ -96,17 +76,12 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
 
     @Override
     public void onDisable() {
-        consoleHandler.onDisable();
-        unsafe().onDisable();
-    }
-
-    public StatisticManager getStatisticManager() {
-        return statisticManager;
+        serverHandler.disable();
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     void on(AsyncPlayerChatEvent event) {
-        chatMessages.add(new MessagePacket.Message(System.currentTimeMillis(),
+        serverHandler.addChatMessage(new MessagePacket.Message(System.currentTimeMillis(),
                 MessagePacket.LogLevel.INFO,
                 ColoredText.parse(String.format(event.getFormat(),
                         event.getPlayer().getDisplayName(), event.getMessage()), false)));
@@ -118,7 +93,7 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         if (index > -1) {
             String command = event.getCommand().substring(0, index);
             if ("say".equals(command.toLowerCase(Locale.US))) {
-                chatMessages.add(new MessagePacket.Message(System.currentTimeMillis(),
+                serverHandler.addChatMessage(new MessagePacket.Message(System.currentTimeMillis(),
                         MessagePacket.LogLevel.INFO,
                         ColoredText.parse('[' + event.getSender().getName() + "] "
                                 + event.getCommand().substring(index + 1), false)));
@@ -133,14 +108,13 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         if (index > -1) {
             String command = message.substring(0, index);
             if ("say".equals(command.toLowerCase(Locale.US))) {
-                chatMessages.add(new MessagePacket.Message(System.currentTimeMillis(),
+                serverHandler.addChatMessage(new MessagePacket.Message(System.currentTimeMillis(),
                         MessagePacket.LogLevel.INFO,
                         ColoredText.parse('[' + event.getPlayer().getName() + "] "
                                 + message.substring(index + 1), false)));
             }
         }
     }
-
 
     @EventHandler
     void on(PlayerJoinEvent e) {
@@ -150,7 +124,8 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         for (Client client : networkHandler.getClients())
             client.sendPacket(new StatisticPacket(
                     StatisticPacket.StatisticItemAction.ADD,
-                    Collections.singletonList(statisticManager.createPlayerInfo(client, player, context, true))
+                    Collections.singletonList(serverHandler.getStatisticManager()
+                            .createStatistic(client, player, context, true))
             ));
         if (update != null && player.hasPermission("mymclab.seeupdate")) {
             String msg = ChatColor.GREEN + "[MyMCLab] A new version is available! (Current version: \" + current + \", new version: \" + update + \")";
@@ -166,7 +141,8 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         for (Client client : networkHandler.getClients())
             client.sendPacket(new StatisticPacket(
                     StatisticPacket.StatisticItemAction.REMOVE,
-                    Collections.singletonList(statisticManager.createPlayerInfo(client, player, context, false))
+                    Collections.singletonList(serverHandler.getStatisticManager()
+                            .createStatistic(client, player, context, false))
             ));
     }
 
@@ -182,19 +158,26 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
     }
 
     private File configFile;
-    private YamlConfig config;
+    private MapConfig config;
 
     @Override
     public void reloadConfig() {
-        this.config = YamlConfig.loadConfig(this.configFile);
-        InputStream defConfigStream = this.getResource("config.yml");
-        if (defConfigStream != null) {
-            this.config.setDefaults(YamlConfig.loadConfig(new InputStreamReader(defConfigStream, Packet.UTF_8)));
+        YamlConfiguration config = YamlConfiguration.loadConfiguration(this.configFile);
+        Map<String, Object> map = config.getValues(false);
+        convertSectionsToMaps(map);
+        this.config = new MapConfig(map);
+    }
+
+    private void convertSectionsToMaps(Map<?, ?> map) {
+        for (Map.Entry entry : map.entrySet()) {
+            if (entry.getValue() instanceof ConfigurationSection)
+                entry.setValue(((ConfigurationSection) entry.getValue()).getValues(false));
+            if (entry.getValue() instanceof Map)
+                convertSectionsToMaps((Map) entry.getValue());
         }
     }
 
-    @Override
-    public YamlConfig getConfig() {
+    public MapConfig getConfiguration() {
         if (config == null) reloadConfig();
         return config;
     }
@@ -213,16 +196,15 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         packetTask.cancel();
 
         reloadConfig();
-        if (!groupsManager.onEnable()) {
+        if (!serverHandler.enable(getConfiguration())) {
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        statisticManager = new StatisticManager(this, getConfig());
 
         NetworkHandler networkHandler = unsafe();
         for (Client client : getClients()) { // Gimme a copy
             Group oldGroup = client.getGroup();
-            Group group = groupsManager.getGroup(oldGroup.getName()); // Get new group after reload
+            Group group = serverHandler.getGroupManager().getGroup(oldGroup.getName()); // Get new group after reload
             if (group == null) {
                 client.disconnect("Your group was removed after a reload");
                 continue;
@@ -230,89 +212,25 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
             networkHandler.setGroup(client, group);
             Set<DefaultPermission> set = new HashSet<>();
             for (DefaultPermission perm : DefaultPermission.values())
-                if (client.hasPermission(perm))
-                    set.add(perm);
+                if (client.hasPermission(perm)) set.add(perm);
             client.sendPacket(new BatchPacket(new Packet[] {
                     new PermissionPacket(set),
-                    statisticManager.createPlayerInfoPacket(client, StatisticPacket.StatisticItemAction.ADD)
+                    serverHandler.getStatisticManager().createStatisticPacket(client, StatisticPacket.StatisticItemAction.ADD)
             }, 2));
         }
 
-        statsRefreshDelay = getConfig().getInt("stats-refresh-delay", 2);
-        if (statsRefreshDelay < 1) statsRefreshDelay = 1;
-        statsRefreshTimer = 0;
-        packetTask = getServer().getScheduler().runTaskTimerAsynchronously(this, this, 20L, 20L);
+        packetTask = getServer().getScheduler().runTaskTimerAsynchronously(this, serverHandler, 20L, 20L);
     }
 
     private BukkitTask packetTask;
-    private int statsRefreshTimer = 0, keepAliveTimer = 0;
-
-    private final Packet[] batchBuffer = new Packet[4];
 
     @Override
-    public void run() {
-        consoleMessages.toggleLock();
-        int packetCount = 0, size = consoleMessages.size();
-        if (size != 0) {
-            if (size < 100) {
-                batchBuffer[packetCount++] = new MessagePacket(false, consoleMessages.toArray(new MessagePacket.Message[size]));
-            } else {
-                consoleMessages.copyTo(size - 100, MESSAGE_BUFFER, 0, 100);
-                batchBuffer[packetCount++] = new MessagePacket(false, MESSAGE_BUFFER);
-            }
-            consoleMessages.clear();
-        }
-        consoleMessages.toggleLock();
-        chatMessages.toggleLock();
-        if ((size = chatMessages.size()) != 0) {
-            if (size < 100) {
-                batchBuffer[packetCount++] = new MessagePacket(true, chatMessages.toArray(new MessagePacket.Message[size]));
-            } else {
-                chatMessages.copyTo(size - 100, MESSAGE_BUFFER, 0, 100);
-                batchBuffer[packetCount++] = new MessagePacket(true, MESSAGE_BUFFER);
-            }
-            chatMessages.clear();
-        }
-        chatMessages.toggleLock();
-        errors.toggleLock();
-        if ((size = errors.size()) != 0) {
-            if (size < 100) {
-                batchBuffer[packetCount++] = new ErrorPacket(errors.toArray(new ErrorPacket.Error[size]));
-            } else {
-                errors.copyTo(size - 100, ERROR_BUFFER, 0, 100);
-                batchBuffer[packetCount++] = new ErrorPacket(ERROR_BUFFER);
-            }
-            errors.clear();
-        }
-        errors.toggleLock();
-        if (++keepAliveTimer == 10) {
-            keepAliveTimer = 0;
-            batchBuffer[packetCount++] = new KeepAlivePacket();
-        }
-        if (packetCount > 0) {
-            Packet packet = packetCount == 1 ? batchBuffer[0] : new BatchPacket(batchBuffer, packetCount);
-            try {
-                packet.encode(); // Make sure the packet is already encoded to ensure the next use of the batchBuffer doesn't update the packets
-                unsafe().getClients().forEach(c -> c.sendPacket(packet));
-            } catch (IOException ex) {
-                ex.printStackTrace();
-            }
-        }
-        if (++statsRefreshTimer == statsRefreshDelay) {
-            for (Client client : unsafe().getClients())
-                client.sendPacket(statisticManager.createPlayerInfoPacket(client,
-                        StatisticPacket.StatisticItemAction.UPDATE));
-            statsRefreshTimer = 0;
-        }
-    }
-
-    @Override
-    public GroupsManager getGroupManager() {
-        return groupsManager;
+    public GroupManager getGroupManager() {
+        return serverHandler.getGroupManager();
     }
 
     private NetworkHandler unsafe() {
-        return networkHandler;
+        return serverHandler.getNetworkHandler();
     }
 
     private String update;
@@ -343,5 +261,28 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
                 }
             }
         }.runTaskAsynchronously(this);
+    }
+
+    public static NetworkHandler determineNetworkHandler(ServerHandler server) {
+        try {
+            Material.valueOf("SLIME_BLOCK");
+            return new Netty_1_8(server);
+        } catch (IllegalArgumentException not1_8) {
+            try {
+                Material.valueOf("PACKED_ICE");
+                return new Netty_1_7(server);
+            } catch (IllegalArgumentException not1_7) {
+                try {
+                    Class.forName("io.netty.channel.Channel");
+                    String pkg = Bukkit.getServer().getClass().getPackage().getName();
+                    if (Class.forName(pkg + ".Spigot").getDeclaredField("netty").getBoolean(null)) {
+                        return new Legacy_Handler_Netty(server);
+                    }
+                } catch (Exception noNetty) {
+                    server.error("I do not support legacy craftbukkit versions! Either use spigot or update to at least 1.7");
+                }
+                return null;
+            }
+        }
     }
 }

@@ -210,4 +210,10 @@ public class ColoredText {
 
         return result;
     }
+
+    private static Pattern STRIP_COLOR_PATTERN = Pattern.compile("(?i)" + COLOR_CHAR + "[0-9A-FK-OR]");
+
+    public static String stripChatColors(String text) {
+        return text == null ? null : STRIP_COLOR_PATTERN.matcher(text).replaceAll("");
+    }
 }

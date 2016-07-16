@@ -3,19 +3,16 @@ package me.megamichiel.mymclab.bukkit.network;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
-import me.megamichiel.mymclab.bukkit.MyMCLabPlugin;
+import me.megamichiel.mymclab.server.ServerHandler;
+import me.megamichiel.mymclab.server.util.ChannelWrapper;
 
 import java.lang.reflect.Field;
 import java.net.SocketAddress;
-import java.security.KeyPair;
-import java.util.List;
 
-class Legacy_Handler_Netty extends Netty_1_8 {
+public class Legacy_Handler_Netty extends Netty_1_8 {
 
-    private List pendingConnections;
-
-    Legacy_Handler_Netty(MyMCLabPlugin plugin, KeyPair keyPair) {
-        super(plugin, keyPair);
+    public Legacy_Handler_Netty(ServerHandler server) {
+        super(server);
     }
 
     @Override
@@ -25,17 +22,14 @@ class Legacy_Handler_Netty extends Netty_1_8 {
             if (field.getType() == ChannelFuture.class) {
                 field.setAccessible(true);
                 future = (ChannelFuture) field.get(conn);
-            } else if (field.getType() == List.class) {
-                field.setAccessible(true);
-                pendingConnections = (List) field.get(conn);
             }
         }
         if (future != null) inject(future);
-        else plugin.getLogger().warning("Failed to inject!");
+        else server.warning("Failed to inject!");
     }
 
     @Override
-    ChannelWrapper wrap(final Channel channel) {
+    ChannelWrapper wrap(final Channel channel, MyMCLabHandler handler) {
         return new ChannelWrapper() {
             @Override
             public void inEventLoop(Runnable runnable) {
@@ -56,7 +50,9 @@ class Legacy_Handler_Netty extends Netty_1_8 {
                     CHANNEL_ADD_LISTENER.invoke(future, ChannelFutureListener.CLOSE);
                 } catch (Exception ex) {
                     ex.printStackTrace();
-                    future.channel().close();
+                    channel.flush();
+                    channel.close(); // Manual close
+                    return;
                 }
                 channel.flush();
             }
@@ -74,6 +70,12 @@ class Legacy_Handler_Netty extends Netty_1_8 {
             @Override
             public boolean isOpen() {
                 return channel.isOpen();
+            }
+
+            @Override
+            public void clearHandlers() {
+                while (channel.pipeline().last() != handler)
+                    channel.pipeline().removeLast();
             }
         };
     }

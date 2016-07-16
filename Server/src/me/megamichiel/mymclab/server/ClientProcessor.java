@@ -1,7 +1,7 @@
-package me.megamichiel.mymclab.bukkit.network;
+package me.megamichiel.mymclab.server;
 
 import me.megamichiel.mymclab.MyMCLab;
-import me.megamichiel.mymclab.bukkit.MyMCLabPlugin;
+import me.megamichiel.mymclab.api.ClientListener;
 import me.megamichiel.mymclab.io.ByteArrayProtocolInput;
 import me.megamichiel.mymclab.io.ByteArrayProtocolOutput;
 import me.megamichiel.mymclab.io.ProtocolInput;
@@ -12,10 +12,10 @@ import me.megamichiel.mymclab.packet.player.StatisticPacket;
 import me.megamichiel.mymclab.perm.DefaultPermission;
 import me.megamichiel.mymclab.perm.Group;
 import me.megamichiel.mymclab.perm.IPermission;
+import me.megamichiel.mymclab.server.util.ChannelWrapper;
 import me.megamichiel.mymclab.util.Compression;
 import me.megamichiel.mymclab.util.Encryption;
 import me.megamichiel.mymclab.util.EncryptionHandler;
-import org.bukkit.Bukkit;
 
 import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
@@ -24,35 +24,35 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
-class ClientProcessor implements Runnable {
+public class ClientProcessor implements Runnable {
 
-    private final MyMCLabPlugin plugin;
-    final NetworkHandler networkHandler;
+    private final ServerHandler server;
+    private final NetworkHandler networkHandler;
     private final ChannelWrapper channel;
-    ClientImpl client;
+    private ClientImpl client;
 
     private Group group;
 
     private Compression compression;
     private EncryptionHandler encryption;
 
-    boolean validated;
+    private boolean validated;
 
     private long lastActive;
     private boolean open = true;
 
-    ClientProcessor(MyMCLabPlugin plugin, NetworkHandler networkHandler, ChannelWrapper channel) {
-        this.plugin = plugin;
+    public ClientProcessor(ServerHandler server, NetworkHandler networkHandler, ChannelWrapper channel) {
+        this.server = server;
         this.networkHandler = networkHandler;
         this.channel = channel;
         lastActive = System.currentTimeMillis();
         new Thread(this).start();
     }
 
-    byte[] encodePacket(Packet packet) throws Exception {
+    public byte[] encodePacket(Packet packet) throws Exception {
         byte[] encoded = packet.encode();
         int length = 0;
-        if (compression != null && encoded.length > me.megamichiel.mymclab.MyMCLab.COMPRESSION_THRESHOLD) {
+        if (compression != null && encoded.length > MyMCLab.COMPRESSION_THRESHOLD) {
             length = encoded.length;
             encoded = compression.compress(encoded);
         }
@@ -67,32 +67,28 @@ class ClientProcessor implements Runnable {
         return data.toByteArray();
     }
 
-    <S extends InputStream & ProtocolInput> void handlePacket(S stream) throws Exception {
+    public <S extends InputStream & ProtocolInput> void handlePacket(S stream) throws Exception {
         lastActive = System.currentTimeMillis();
         int length = stream.readVarInt();
         client.bytesReceived += Packet.varIntLength(length) + length;
-        byte[] decoded = new byte[length];
-        stream.readFully(decoded);
-        decoded = encryption.decrypt(decoded);
-        ByteArrayProtocolInput in = new ByteArrayProtocolInput(decoded);
-        length = in.readVarInt();
-        if (length != 0) { // Compressed
-            if (length <= me.megamichiel.mymclab.MyMCLab.COMPRESSION_THRESHOLD) {
+        ByteArrayProtocolInput in = new ByteArrayProtocolInput(
+                encryption.decrypt(stream.readFully(length))
+        );
+        if ((length = in.readVarInt()) != 0) { // Compressed
+            if (length <= MyMCLab.COMPRESSION_THRESHOLD)
                 throw new IOException("Badly compressed packet, length " + length);
-            }
-            byte[] b = new byte[in.available()];
-            in.readFully(b);
-            in = new ByteArrayProtocolInput(compression.decompress(b, length));
+            in = new ByteArrayProtocolInput(compression.decompress(
+                    in.readFully(in.available()), length));
         }
         final Packet packet = Packet.createPacket(in);
         IPermission perm = packet.getPermission();
         if (perm != null && !client.hasPermission(perm)) return;
 
-        if (Bukkit.isPrimaryThread()) client.handlePacket(packet);
-        else Bukkit.getScheduler().runTask(plugin, () -> client.handlePacket(packet));
+        if (server.isMainThread()) client.handlePacket(packet);
+        else server.runOnMainThread(() -> client.handlePacket(packet));
     }
 
-    <S extends InputStream & ProtocolInput> State handleLogin(S stream) throws Exception {
+    public <S extends InputStream & ProtocolInput> State handleLogin(S stream) throws Exception {
         lastActive = System.currentTimeMillis();
         byte[] header = me.megamichiel.mymclab.MyMCLab.HEADER;
         if (stream.available() > header.length
@@ -101,16 +97,35 @@ class ClientProcessor implements Runnable {
             if (available == 2) {
                 short version = stream.readShort(),
                         myVersion = MyMCLab.PROTOCOL_VERSION;
-                if (version < myVersion) return State.OUTDATED_CLIENT;
-                else if (version > myVersion) return State.OUTDATED_SERVER;
+                if (version != myVersion) {
+                    ByteArrayProtocolOutput out = new ByteArrayProtocolOutput();
+                    out.write(MyMCLab.HEADER);
+                    out.writeByte(version < myVersion ? -1 : 1);
+                    channel.writeAndClose(out.toByteArray());
+                    return version < myVersion ? State.OUTDATED_CLIENT : State.OUTDATED_SERVER;
+                }
+                client = new ClientImpl(channel, server);
+                channel.clearHandlers();
+
+                ByteArrayProtocolOutput out = new ByteArrayProtocolOutput();
+                out.write(MyMCLab.HEADER);
+                out.writeByte(0);
+                byte[] encoded = server.getKeyPair().getPublic().getEncoded();
+                out.writeVarInt(encoded.length);
+                out.write(encoded);
+                channel.writeAndFlush(out.toByteArray());
                 return State.LOGIN;
-            } else {
+            } else if (client != null) {
                 byte[] decoded = stream.readFully(available);
-                decoded = Encryption.decryptData(networkHandler.keyPair.getPrivate(), decoded);
+                decoded = Encryption.decryptData(server.getKeyPair().getPrivate(), decoded);
                 ByteArrayProtocolInput dataInput = new ByteArrayProtocolInput(decoded);
                 String groupName = dataInput.readString();
-                group = plugin.getGroupManager().getGroupOrDefault(groupName);
-                if (group == null) return State.BAD_GROUP;
+                group = server.getGroupManager().getGroup(groupName);
+                if (group == null) group = server.getGroupManager().getDefaultGroup();
+                if (group == null) {
+                    disconnect("Unknown group!");
+                    return State.BAD_GROUP;
+                }
                 byte[] password = group.getPassword();
                 if (dataInput.available() > password.length
                         && Arrays.equals(dataInput.readFully(password.length), password)) {
@@ -118,26 +133,29 @@ class ClientProcessor implements Runnable {
                     compression = new Compression();
                     encryption = new EncryptionHandler(new SecretKeySpec(
                             dataInput.readFully(dataInput.available()), "AES"));
+                    loginComplete();
                     return State.AUTHENTICATED;
                 }
+                disconnect("Incorrect password!");
                 return State.BAD_PASSWORD;
             }
         }
         return State.BAD_PROTOCOL;
     }
 
-    void loginComplete() {
-        client.group = group;
-        Set<DefaultPermission> set = new HashSet<>();
-        for (DefaultPermission perm : DefaultPermission.values())
-            if (group.hasPermission(perm))
-                set.add(perm);
-        group = null;
-        client.sendPacket(new BatchPacket(new Packet[] {
-                new PermissionPacket(set),
-                plugin.getStatisticManager().createPlayerInfoPacket(
-                        client, StatisticPacket.StatisticItemAction.ADD)
-        }, 2));
+    public void loginComplete() {
+        if (networkHandler.handleClientJoin(client)) {
+            client.group = group;
+            Set<DefaultPermission> set = new HashSet<>();
+            for (DefaultPermission perm : DefaultPermission.values())
+                if (group.hasPermission(perm))
+                    set.add(perm);
+            group = null;
+            client.sendPacket(new BatchPacket(new Packet[] {
+                    new PermissionPacket(set),
+                    server.getStatisticManager().createStatisticPacket(client, StatisticPacket.StatisticItemAction.ADD)
+            }, 2));
+        }
     }
 
     @Override
@@ -155,11 +173,23 @@ class ClientProcessor implements Runnable {
         }
     }
 
-    void handleClose() {
+    public boolean isValidated() {
+        return validated;
+    }
+
+    public void handleClose() {
         open = false;
     }
 
-    enum State {
+    public void disconnect(String reason) {
+        client.disconnect(reason);
+    }
+
+    public ClientImpl getClient() {
+        return client;
+    }
+
+    public enum State {
         BAD_PROTOCOL, OUTDATED_CLIENT, OUTDATED_SERVER, BAD_PASSWORD, BAD_GROUP,
         LOGIN, AUTHENTICATED
     }

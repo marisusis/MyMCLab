@@ -5,46 +5,35 @@ import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.MessageToMessageCodec;
-import me.megamichiel.mymclab.MyMCLab;
 import me.megamichiel.mymclab.api.ClientListener;
-import me.megamichiel.mymclab.bukkit.MyMCLabPlugin;
-import me.megamichiel.mymclab.io.ByteArrayProtocolOutput;
 import me.megamichiel.mymclab.io.ProtocolInputStream;
 import me.megamichiel.mymclab.packet.Packet;
 import me.megamichiel.mymclab.perm.IPermission;
+import me.megamichiel.mymclab.server.ClientImpl;
+import me.megamichiel.mymclab.server.ClientProcessor;
+import me.megamichiel.mymclab.server.NetworkHandler;
+import me.megamichiel.mymclab.server.ServerHandler;
+import me.megamichiel.mymclab.server.util.ChannelWrapper;
 import org.bukkit.Bukkit;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.SocketAddress;
-import java.security.KeyPair;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
 
-class Netty_1_8 extends NetworkHandler {
+public class Netty_1_8 extends NetworkHandler {
 
-    static final Method CHANNEL_ADD_LISTENER;
-
-    static {
-        Method m = null;
-        try {
-            for (Method method : ChannelFuture.class.getDeclaredMethods()) {
-                if (method.getName().equals("addListener")) {
-                    m = method;
-                    break;
-                }
-            }
-        } catch (Exception ex) {
-            m = null;
-        }
-        CHANNEL_ADD_LISTENER = m;
-    }
+    static final Method CHANNEL_ADD_LISTENER = Arrays.stream(
+            ChannelFuture.class.getDeclaredMethods())
+            .filter(m -> m.getName().equals("addListener")).findAny().orElse(null);
 
     private CustomChild child;
 
-    Netty_1_8(MyMCLabPlugin plugin, KeyPair keyPair) {
-        super(plugin, keyPair);
+    public Netty_1_8(ServerHandler server) {
+        super(server);
     }
 
     @Override
@@ -63,7 +52,7 @@ class Netty_1_8 extends NetworkHandler {
                 }
             }
             if (conn == null) {
-                plugin.getLogger().severe("Couldn't find server's connection handler!");
+                this.server.warning("Couldn't find server's connection handler!");
                 return;
             }
             inject(conn);
@@ -115,7 +104,7 @@ class Netty_1_8 extends NetworkHandler {
         clients.forEach(clientClose);
     }
 
-    ChannelWrapper wrap(final Channel channel) {
+    ChannelWrapper wrap(final Channel channel, MyMCLabHandler handler) {
         return new ChannelWrapper() {
             @Override
             public void inEventLoop(Runnable runnable) {
@@ -153,6 +142,12 @@ class Netty_1_8 extends NetworkHandler {
             public boolean isOpen() {
                 return channel.isOpen();
             }
+
+            @Override
+            public void clearHandlers() {
+                while (channel.pipeline().last() != handler)
+                    channel.pipeline().removeLast();
+            }
         };
     }
 
@@ -179,12 +174,12 @@ class Netty_1_8 extends NetworkHandler {
 
         @Override
         protected void initChannel(Channel channel) throws Exception {
+            channel.pipeline().addLast("mymclab", new MyMCLabHandler(channel));
             try {
                 initChannel.invoke(serverChild, channel);
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
-            channel.pipeline().addFirst("mymclab", new MyMCLabHandler(channel));
         }
 
         void revert() {
@@ -196,19 +191,19 @@ class Netty_1_8 extends NetworkHandler {
         }
     }
 
-    private class MyMCLabHandler extends MessageToMessageCodec<Object, Object> {
+    class MyMCLabHandler extends MessageToMessageCodec<Object, Object> {
 
-        private final ChannelWrapper wrapper;
         private final ClientProcessor processor;
 
-        MyMCLabHandler(final Channel channel) {
-            processor = new ClientProcessor(plugin, Netty_1_8.this, wrapper = wrap(channel));
+        MyMCLabHandler(Channel channel) {
+            processor = new ClientProcessor(server, Netty_1_8.this, wrap(channel, this));
         }
 
         protected Object decode(ChannelHandlerContext ctx, Object in) throws Exception {
+            System.out.println("Received " + in);
             ByteBuf buf = (ByteBuf) in;
             ProtocolInputStream stream = new ProtocolInputStream(new ByteBufInputStream(buf));
-            if (processor.validated) {
+            if (processor.isValidated()) {
                 while (stream.available() > 0) processor.handlePacket(stream);
             } else {
                 buf.markReaderIndex();
@@ -217,46 +212,15 @@ class Netty_1_8 extends NetworkHandler {
                     case BAD_PROTOCOL:
                         buf.resetReaderIndex();
                         return Unpooled.copiedBuffer(buf);
-                    case OUTDATED_CLIENT: case OUTDATED_SERVER:
-                        while (ctx.channel().pipeline().last() != this)
-                            ctx.channel().pipeline().removeLast();
-                        ByteArrayProtocolOutput out = new ByteArrayProtocolOutput();
-                        out.write(MyMCLab.HEADER);
-                        out.writeByte(state == ClientProcessor.State.OUTDATED_CLIENT ? -1 : 1);
-                        wrapper.writeAndClose(Unpooled.wrappedBuffer(out.toByteArray()));
-                        break;
                     case LOGIN:
-                        while (ctx.channel().pipeline().last() != this)
-                            ctx.channel().pipeline().removeLast();
-                        out = new ByteArrayProtocolOutput();
-                        out.write(MyMCLab.HEADER);
-                        out.writeByte(0);
-                        byte[] encoded = keyPair.getPublic().getEncoded();
-                        out.writeVarInt(encoded.length);
-                        out.write(encoded);
-                        processor.client = new ClientImpl(wrapper, plugin);
-                        wrapper.writeAndFlush(Unpooled.wrappedBuffer(out.toByteArray()));
-                        ctx.channel().closeFuture().addListener((ChannelFutureListener) future -> {
-                            if (processor.client != null && clients.remove(processor.client)) {
+                        CHANNEL_ADD_LISTENER.invoke(ctx.channel().closeFuture(), (ChannelFutureListener) future -> {
+                            ClientImpl client = processor.getClient();
+                            if (client != null && clients.remove(client)) {
                                 processor.handleClose();
                                 for (ClientListener listener : clientListeners)
-                                    listener.clientDisconnected(processor.client);
+                                    listener.clientDisconnected(client);
                             }
                         });
-                        break;
-                    case BAD_GROUP:
-                        while (ctx.channel().pipeline().last() != this)
-                            ctx.channel().pipeline().removeLast();
-                        processor.client.disconnect("Unknown group!");
-                        break;
-                    case BAD_PASSWORD:
-                        while (ctx.channel().pipeline().last() != this)
-                            ctx.channel().pipeline().removeLast();
-                        processor.client.disconnect("Incorrect password!");
-                        break;
-                    case AUTHENTICATED:
-                        if (processor.networkHandler.handleClientJoin(processor.client))
-                            processor.loginComplete();
                         break;
                 }
             }
@@ -269,13 +233,15 @@ class Netty_1_8 extends NetworkHandler {
         }
 
         protected Object encode(ChannelHandlerContext ctx, Object in) throws Exception {
+            System.out.println("Encoding " + in);
             if (in instanceof Packet) {
                 Packet packet = (Packet) in;
                 IPermission perm = packet.getPermission();
-                if (perm != null && !processor.client.hasPermission(perm))
+                if (perm != null && !processor.getClient().hasPermission(perm))
                     return null;
                 return Unpooled.wrappedBuffer(processor.encodePacket(packet));
             }
+            if (in instanceof byte[]) return Unpooled.wrappedBuffer((byte[]) in);
             return in instanceof ByteBuf ? Unpooled.copiedBuffer((ByteBuf) in) : null;
         }
 
@@ -286,7 +252,7 @@ class Netty_1_8 extends NetworkHandler {
 
         @Override
         public void exceptionCaught(ChannelHandlerContext channelHandlerContext, Throwable throwable) throws Exception {
-            if (processor.validated) throwable.printStackTrace(); //plugin.getLogger().warning(throwable.toString());
+            if (processor.isValidated()) throwable.printStackTrace(); //plugin.getLogger().warning(throwable.toString());
             else super.exceptionCaught(channelHandlerContext, throwable);
         }
     }

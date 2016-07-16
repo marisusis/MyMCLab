@@ -1,9 +1,8 @@
-package me.megamichiel.mymclab.bukkit.network;
+package me.megamichiel.mymclab.server;
 
 import me.megamichiel.mymclab.api.Client;
 import me.megamichiel.mymclab.api.Modal;
 import me.megamichiel.mymclab.api.PluginMessageListener;
-import me.megamichiel.mymclab.bukkit.MyMCLabPlugin;
 import me.megamichiel.mymclab.packet.Packet;
 import me.megamichiel.mymclab.packet.messaging.PluginMessagePacket;
 import me.megamichiel.mymclab.packet.messaging.RawMessagePacket;
@@ -12,31 +11,27 @@ import me.megamichiel.mymclab.packet.modal.ModalClosePacket;
 import me.megamichiel.mymclab.packet.modal.ModalOpenPacket;
 import me.megamichiel.mymclab.packet.player.PromptResponsePacket;
 import me.megamichiel.mymclab.packet.player.StatisticClickPacket;
-import me.megamichiel.mymclab.perm.DefaultPermission;
 import me.megamichiel.mymclab.perm.Group;
-import me.megamichiel.mymclab.perm.IPermission;
-import org.bukkit.Bukkit;
-import org.bukkit.Server;
-import org.bukkit.event.server.ServerCommandEvent;
+import me.megamichiel.mymclab.server.util.ChannelWrapper;
 
 import java.net.SocketAddress;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-class ClientImpl implements Client {
+public class ClientImpl implements Client {
 
     private final List<PluginMessageListener> pluginMessageListeners = new CopyOnWriteArrayList<>();
 
     private final ChannelWrapper channel;
-    private final MyMCLabPlugin plugin;
+    private final ServerHandler server;
 
     Group group;
     long joinTime, bytesSent, bytesReceived;
     private Modal modal;
 
-    ClientImpl(ChannelWrapper channel, MyMCLabPlugin plugin) {
+    ClientImpl(ChannelWrapper channel, ServerHandler server) {
         this.channel = channel;
-        this.plugin = plugin;
+        this.server = server;
     }
 
     @Override
@@ -71,8 +66,10 @@ class ClientImpl implements Client {
 
     @Override
     public void openModal(Modal modal) {
-        this.modal = modal;
-        sendPacket(modal == null ? new ModalClosePacket() : new ModalOpenPacket(modal));
+        if (modal != this.modal) {
+            this.modal = modal;
+            sendPacket(modal == null ? new ModalClosePacket() : new ModalOpenPacket(modal));
+        }
     }
 
     @Override
@@ -105,7 +102,7 @@ class ClientImpl implements Client {
         if (listener != null) pluginMessageListeners.remove(listener);
     }
 
-    void handlePacket(Packet packet) {
+    public void handlePacket(Packet packet) {
         if (packet instanceof RawMessagePacket) {
             RawMessagePacket message = (RawMessagePacket) packet;
             switch (message.getType()) {
@@ -113,27 +110,17 @@ class ClientImpl implements Client {
                     disconnect(message.getMessage());
                     break;
                 case CHAT: case COMMAND:
-                    boolean chat = message.getType() == RawMessagePacket.RawMessageType.CHAT;
-                    IPermission permission = chat ? DefaultPermission.INPUT_CHAT : DefaultPermission.INPUT_COMMANDS;
-                    if (!hasPermission(permission)) return;
-
-                    Server server = Bukkit.getServer();
-                    ServerCommandEvent event = new ServerCommandEvent(
-                            server.getConsoleSender(), (chat ? "say " : "") + message.getMessage());
-                    server.getPluginManager().callEvent(event);
-                    if (!event.isCancelled() && event.getCommand() != null)
-                        server.dispatchCommand(event.getSender(), event.getCommand());
+                    server.handleCommand(message.getMessage(),
+                            message.getType() == RawMessagePacket.RawMessageType.CHAT);
                     break;
                 default:
                     disconnect("Bad raw message: " + message.getType().name());
                     break;
             }
-        } else if (packet instanceof StatisticClickPacket) {
-            plugin.getStatisticManager().handleClick(this,
-                    ((StatisticClickPacket) packet).getName(),
-                    ((StatisticClickPacket) packet).getItemIndex());
-        } else if (packet instanceof PromptResponsePacket)
-            plugin.getStatisticManager().handlePrompt(this, (PromptResponsePacket) packet);
+        } else if (packet instanceof StatisticClickPacket)
+            server.getStatisticManager().handleClick(this, (StatisticClickPacket) packet);
+        else if (packet instanceof PromptResponsePacket)
+            server.getStatisticManager().handlePrompt(this, (PromptResponsePacket) packet);
         else if (packet instanceof ModalClickPacket) {
             ModalClickPacket click = (ModalClickPacket) packet;
             Modal current = getOpenModal();
@@ -145,9 +132,8 @@ class ClientImpl implements Client {
             PluginMessagePacket message = (PluginMessagePacket) packet;
             String tag = message.getTag();
             byte[] data = message.getData();
-            for (PluginMessageListener listener : pluginMessageListeners) {
+            for (PluginMessageListener listener : pluginMessageListeners)
                 listener.onPluginMessageReceived(this, tag, data);
-            }
         }
     }
 }

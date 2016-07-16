@@ -1,12 +1,16 @@
 package me.megamichiel.mymclab.api;
 
 import me.megamichiel.mymclab.MyMCLab;
+import me.megamichiel.mymclab.api.Client;
+import me.megamichiel.mymclab.api.ClientListener;
 import me.megamichiel.mymclab.perm.GroupManager;
 
 import java.util.List;
 
 /**
- * An interface to be used on a server to work with MyMCLab
+ * An interface to be used on a server to work with MyMCLab.
+ * In most cases this can be retrieved by casting the plugin instance to this class.
+ * This goes for: Bukkit, BungeeCord and probably future implementations.
  */
 public interface MyMCLabServer extends MyMCLab {
 
