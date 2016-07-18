@@ -1,0 +1,37 @@
+password: password
+
+stats-refresh-delay: 2
+
+player-info:
+- text: '&aServer: %player_server%'
+  type: text
+
+- text: '&bSend to server'
+  type: text
+  prompts:
+    server:
+      name: Server
+      type: text
+  click-commands:
+  - 'send %player_name% {prompt_server}'
+  make-toast: 'Sending %player_name% to {prompt_server}'
+
+server-info:
+- text: '&6RAM &a(%server_ram_used%/%server_ram_max%)'
+  type: 'progress-circle'
+  value: '%server_ram_used%'
+  max: '%server_ram_max%'
+  prompts:
+    type:
+      name: Type
+      type: selection
+      values: [Used, Free, Total, Max]
+    amount:
+      type: child
+      parent: type
+      values:
+        Used: '%server_ram_used%'
+        Free: '%server_ram_free%'
+        Total: '%server_ram_total%'
+        Max: '%server_ram_max%'
+  make-toast: '{prompt_type} RAM: {prompt_amount}'

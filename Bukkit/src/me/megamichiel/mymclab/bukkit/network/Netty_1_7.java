@@ -191,6 +191,7 @@ public class Netty_1_7 extends NetworkHandler {
                         case BAD_PROTOCOL:
                             buf.resetReaderIndex();
                             super.channelRead(ctx, buf);
+                            ctx.channel().pipeline().remove(this);
                         case LOGIN:
                             ctx.channel().closeFuture().addListener((ChannelFutureListener) future -> {
                                 if (processor.getClient() != null && clients.remove(processor.getClient())) {

@@ -133,7 +133,8 @@ public class BungeeNetworkHandler extends NetworkHandler {
                 switch (state) {
                     case BAD_PROTOCOL:
                         buf.resetReaderIndex();
-                        super.channelRead(ctx, buf);
+                        super.channelRead(ctx, Unpooled.copiedBuffer(buf));
+                        ctx.channel().pipeline().remove(this);
                     case LOGIN:
                         ctx.channel().closeFuture().addListener((ChannelFutureListener) future -> {
                             if (processor.getClient() != null && clients.remove(processor.getClient())) {

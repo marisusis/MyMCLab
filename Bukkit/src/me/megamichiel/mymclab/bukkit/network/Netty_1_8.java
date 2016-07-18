@@ -200,7 +200,7 @@ public class Netty_1_8 extends NetworkHandler {
         }
 
         protected Object decode(ChannelHandlerContext ctx, Object in) throws Exception {
-            System.out.println("Received " + in);
+            //System.out.println("Received " + in);
             ByteBuf buf = (ByteBuf) in;
             ProtocolInputStream stream = new ProtocolInputStream(new ByteBufInputStream(buf));
             if (processor.isValidated()) {
@@ -211,6 +211,7 @@ public class Netty_1_8 extends NetworkHandler {
                 switch (state) {
                     case BAD_PROTOCOL:
                         buf.resetReaderIndex();
+                        ctx.channel().pipeline().remove(this);
                         return Unpooled.copiedBuffer(buf);
                     case LOGIN:
                         CHANNEL_ADD_LISTENER.invoke(ctx.channel().closeFuture(), (ChannelFutureListener) future -> {
@@ -233,7 +234,7 @@ public class Netty_1_8 extends NetworkHandler {
         }
 
         protected Object encode(ChannelHandlerContext ctx, Object in) throws Exception {
-            System.out.println("Encoding " + in);
+            //System.out.println("Encoding " + in);
             if (in instanceof Packet) {
                 Packet packet = (Packet) in;
                 IPermission perm = packet.getPermission();

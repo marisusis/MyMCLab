@@ -18,8 +18,7 @@ public class BungeeServerHandler extends ServerHandler {
         super(BungeeNetworkHandler::new, server -> new BungeeStatisticManager(plugin, server),
                 (a, b) -> new ConsoleHandler(a::add, b::add, ProxyServer.getInstance().getLogger()));
         this.plugin = plugin;
-        disableFeatures(DefaultPermission.VIEW_CHAT,
-                DefaultPermission.INPUT_CHAT, DefaultPermission.VIEW_SERVER_INFO);
+        disableFeatures(DefaultPermission.VIEW_CHAT, DefaultPermission.INPUT_CHAT);
     }
 
     private final TextComponent commandNotFound = new TextComponent("Command not found");

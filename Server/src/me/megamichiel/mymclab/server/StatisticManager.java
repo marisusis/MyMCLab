@@ -10,7 +10,7 @@ import me.megamichiel.mymclab.perm.CustomPermission;
 import me.megamichiel.mymclab.perm.DefaultPermission;
 import me.megamichiel.mymclab.perm.IPermission;
 import me.megamichiel.mymclab.server.util.DynamicString;
-import me.megamichiel.mymclab.server.util.MapConfig;
+import me.megamichiel.mymclab.server.util.IConfig;
 import me.megamichiel.mymclab.util.ColoredText;
 
 import java.io.IOException;
@@ -46,7 +46,7 @@ public abstract class StatisticManager {
     protected abstract Collection<?> getPlayers();
     protected abstract <V> Map<Object, V> createPlayerMap();
 
-    public void load(MapConfig config) {
+    public void load(IConfig config) {
         playerValues = loadConfig(server, "Player", config.getSectionList("player-info"));
         serverValues = loadConfig(server, "Server", config.getSectionList("server-info"));
     }
@@ -171,8 +171,8 @@ public abstract class StatisticManager {
             this.permission = permission;
             this.clickPermission = clickPermission;
             if (prompts != null) {
-                for (DynamicString command : this.commands) command.replacePrompts(PROMPT_PATTERN, promptValues.get());
-                if (toast != null) toast.replacePrompts(PROMPT_PATTERN, promptValues.get());
+                for (DynamicString command : this.commands) command.replacePrompts(PROMPT_PATTERN, promptValues::get);
+                if (toast != null) toast.replacePrompts(PROMPT_PATTERN, promptValues::get);
             }
         }
 
@@ -249,17 +249,17 @@ public abstract class StatisticManager {
         }
     }
 
-    private DefaultPromptRequest[] parsePrompts(MapConfig sec) {
+    private DefaultPromptRequest[] parsePrompts(IConfig sec) {
         if (sec == null) return null;
         List<DefaultPromptRequest> values = new ArrayList<>();
         for (String id : sec.keys()) {
-            MapConfig section = sec.getSection(id);
+            IConfig section = sec.getSection(id);
             if (section == null) continue; // Not a section
             String typeString = section.getString("type", "text");
             if ("child".equalsIgnoreCase(typeString)) {
                 String parent = section.getString("parent");
                 if (parent == null) continue;
-                MapConfig childValues = section.getSection("values");
+                IConfig childValues = section.getSection("values");
                 if (childValues == null) continue;
                 Map<DynamicString, DynamicString> map = new HashMap<>();
                 for (String key : childValues.keys()) {
@@ -357,11 +357,11 @@ public abstract class StatisticManager {
     }
 
     private StatisticTemplate[] loadConfig(ServerHandler server, String id,
-                                           List<MapConfig> list) {
+                                           List<? extends IConfig> list) {
         List<StatisticTemplate> values = new ArrayList<>();
 
         for (int i = 0; i < list.size(); i++) {
-            MapConfig section = list.get(i);
+            IConfig section = list.get(i);
 
             StatisticPacket.StatisticType type;
             try {

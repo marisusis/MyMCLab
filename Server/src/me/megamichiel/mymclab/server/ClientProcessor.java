@@ -140,6 +140,7 @@ public class ClientProcessor implements Runnable {
                 return State.BAD_PASSWORD;
             }
         }
+        open = false;
         return State.BAD_PROTOCOL;
     }
 

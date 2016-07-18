@@ -2,7 +2,7 @@ package me.megamichiel.mymclab.server;
 
 import me.megamichiel.mymclab.packet.Packet;
 import me.megamichiel.mymclab.perm.*;
-import me.megamichiel.mymclab.server.util.MapConfig;
+import me.megamichiel.mymclab.server.util.IConfig;
 import me.megamichiel.mymclab.util.Reporter;
 
 import java.util.*;
@@ -22,10 +22,10 @@ public class GroupsManager implements GroupManager {
         Collections.addAll(disabledFeatures, permissions);
     }
 
-    public boolean enable(MapConfig config) {
+    public boolean enable(IConfig config) {
         groups.clear();
 
-        MapConfig groups = config.getSection("groups");
+        IConfig groups = config.getSection("groups");
         if (groups != null) {
             List<String> names = new ArrayList<>(groups.keys());
             while (!names.isEmpty()) loadGroup(config, names, names.get(0), groups);
@@ -49,7 +49,7 @@ public class GroupsManager implements GroupManager {
                 return false;
             }
         }
-        MapConfig permDef = config.getSection("permission-defaults");
+        IConfig permDef = config.getSection("permission-defaults");
         if (permDef != null)
             permDef.keys().stream().filter(permDef::isBoolean)
                     .forEach(key -> CustomPermission.resolvePermission(key)
@@ -57,9 +57,9 @@ public class GroupsManager implements GroupManager {
         return true;
     }
 
-    private Group loadGroup(MapConfig config, List<String> names, String name, MapConfig groups) {
+    private Group loadGroup(IConfig config, List<String> names, String name, IConfig groups) {
         names.remove(name);
-        MapConfig section = groups.getSection(name);
+        IConfig section = groups.getSection(name);
         if (section == null) {
             reporter.warning("Group " + name + " is not a section!");
             return null;

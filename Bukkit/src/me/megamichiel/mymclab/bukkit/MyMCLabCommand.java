@@ -49,16 +49,16 @@ class MyMCLabCommand implements CommandExecutor {
                         }
                     } else return RED + "You don't have permission for that!";
                     return null;
-                case "spasm":
+                /*case "spasm":
                     meme(20);
-                    return null;
+                    return null;*/
             }
         }
         return RED + "/<command> reload";
     }
 
-    private void meme(int i) {
+    /*private void meme(int i) {
         if (i == 0) throw new NullPointerException();
         meme(i - 1);
-    }
+    }*/
 }

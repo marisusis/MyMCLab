@@ -6,12 +6,12 @@ import me.megamichiel.mymclab.bukkit.MyMCLabPlugin;
 import me.megamichiel.mymclab.server.ServerHandler;
 import me.megamichiel.mymclab.server.StatisticManager;
 import me.megamichiel.mymclab.server.util.DynamicString;
-import me.megamichiel.mymclab.server.util.MapConfig;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 public class BukkitStatisticManager extends StatisticManager {
@@ -66,8 +66,8 @@ public class BukkitStatisticManager extends StatisticManager {
         @Override
         public String toString(Object player, Object context) {
             if (context != null)
-                return bundle.toString((Player) player, (PlaceholderContext) context);
-            else return bundle.toString((Player) player);
+                return bundle.toString(player, (PlaceholderContext) context);
+            else return bundle.toString(player);
         }
 
         @Override
@@ -76,11 +76,11 @@ public class BukkitStatisticManager extends StatisticManager {
         }
 
         @Override
-        public void replacePrompts(Pattern pattern, Map<String, String> promptValues) {
+        public void replacePrompts(Pattern pattern, Supplier<Map<String, String>> promptValues) {
             bundle.replace(pattern, matcher -> {
                 final String name = matcher.group(1);
                 return (nagger, who) -> {
-                    StringBundle bundle = StringBundle.parse(plugin, promptValues.get(name));
+                    StringBundle bundle = StringBundle.parse(plugin, promptValues.get().get(name));
                     return bundle == null ? null : bundle.toString(who);
                 };
             });

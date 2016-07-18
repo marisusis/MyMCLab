@@ -1,6 +1,9 @@
 package me.megamichiel.mymclab.bukkit;
 
 import me.megamichiel.animationlib.Nagger;
+import me.megamichiel.animationlib.config.AbstractConfig;
+import me.megamichiel.animationlib.config.ConfigManager;
+import me.megamichiel.animationlib.config.YamlConfig;
 import me.megamichiel.animationlib.placeholder.PlaceholderContext;
 import me.megamichiel.mymclab.api.Client;
 import me.megamichiel.mymclab.api.ClientListener;
@@ -18,13 +21,11 @@ import me.megamichiel.mymclab.perm.Group;
 import me.megamichiel.mymclab.perm.GroupManager;
 import me.megamichiel.mymclab.server.NetworkHandler;
 import me.megamichiel.mymclab.server.ServerHandler;
-import me.megamichiel.mymclab.server.util.MapConfig;
+import me.megamichiel.mymclab.server.util.IConfig;
 import me.megamichiel.mymclab.util.ColoredText;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
-import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -39,17 +40,20 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer, Nagger {
 
     private static final String DONT_MIND_ME_I_HAVE_NO_USE = "%%__USER__%%";
 
     private final ServerHandler serverHandler = new BukkitServerHandler(this);
+    private final ConfigManager<BukkitConfig> config = ConfigManager.of(BukkitConfig::new);
 
     @Override
     public void onEnable() {
@@ -59,7 +63,7 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        configFile = new File(getDataFolder(), "config.yml");
+        config.file(new File(getDataFolder(), "config.yml"));
         saveDefaultConfig();
 
         if (!serverHandler.enable(getConfiguration())) {
@@ -157,29 +161,18 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         unsafe().addClientListener(listener);
     }
 
-    private File configFile;
-    private MapConfig config;
+    @Override
+    public void saveDefaultConfig() {
+        config.saveDefaultConfig(() -> getResource("config_bukkit.yml"));
+    }
 
     @Override
     public void reloadConfig() {
-        YamlConfiguration config = YamlConfiguration.loadConfiguration(this.configFile);
-        Map<String, Object> map = config.getValues(false);
-        convertSectionsToMaps(map);
-        this.config = new MapConfig(map);
+        config.reloadConfig();
     }
 
-    private void convertSectionsToMaps(Map<?, ?> map) {
-        for (Map.Entry entry : map.entrySet()) {
-            if (entry.getValue() instanceof ConfigurationSection)
-                entry.setValue(((ConfigurationSection) entry.getValue()).getValues(false));
-            if (entry.getValue() instanceof Map)
-                convertSectionsToMaps((Map) entry.getValue());
-        }
-    }
-
-    public MapConfig getConfiguration() {
-        if (config == null) reloadConfig();
-        return config;
+    public BukkitConfig getConfiguration() {
+        return config.getConfig();
     }
 
     @Override
@@ -283,6 +276,88 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
                 }
                 return null;
             }
+        }
+    }
+
+    static class BukkitConfig extends AbstractConfig implements IConfig {
+
+        private final AbstractConfig parent;
+
+        BukkitConfig(AbstractConfig parent) {
+            this.parent = parent;
+        }
+
+        BukkitConfig() {
+            parent = new YamlConfig();
+        }
+
+
+        @Override
+        public void set(String path, Object value) {
+            parent.set(path, value);
+        }
+
+        @Override
+        public void setAll(AbstractConfig config) {
+            parent.setAll(config);
+        }
+
+        @Override
+        public void setAll(Map<String, Object> map) {
+            parent.setAll(map);
+        }
+
+        @Override
+        public Object get(String path) {
+            return parent.get(path);
+        }
+
+        @Override
+        public Set<String> keys() {
+            return parent.keys();
+        }
+
+        @Override
+        public Map<String, Object> values() {
+            return parent.values();
+        }
+
+        @Override
+        public Set<String> deepKeys() {
+            return parent.deepKeys();
+        }
+
+        @Override
+        public Map<String, Object> deepValues() {
+            return parent.deepValues();
+        }
+
+        @Override
+        public Map<String, Object> toRawMap() {
+            return parent.toRawMap();
+        }
+
+        @Override
+        public BukkitConfig getSection(String path) {
+            AbstractConfig sec = parent.getSection(path);
+            return sec == null ? null : new BukkitConfig(sec);
+        }
+
+        @Override
+        public List<BukkitConfig> getSectionList(String path) {
+            return parent.getSectionList(path).stream()
+                    .map(BukkitConfig::new).collect(Collectors.toList());
+        }
+
+        @Override
+        public AbstractConfig loadFromFile(File file) throws IOException {
+            parent.loadFromFile(file);
+            return this;
+        }
+
+        @Override
+        public void save(File file) throws IOException {
+            parent.save(file);
         }
     }
 }

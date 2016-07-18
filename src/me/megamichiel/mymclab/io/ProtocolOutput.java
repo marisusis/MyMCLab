@@ -15,12 +15,10 @@ public interface ProtocolOutput extends DataOutput {
     default void write(byte[] b, int off, int len) throws IOException {
         if (b == null) {
             throw new NullPointerException();
-        } else if ((off < 0) || (off > b.length) || (len < 0) ||
-                ((off + len) > b.length) || ((off + len) < 0)) {
+        } else if (off < 0 || off > b.length || len < 0 ||
+                (off + len) > b.length || (off + len) < 0) {
             throw new IndexOutOfBoundsException();
-        } else if (len == 0) {
-            return;
-        }
+        } else if (len == 0) return;
         for (int i = 0 ; i < len ; i++) {
             write(b[off + i]);
         }
@@ -79,10 +77,7 @@ public interface ProtocolOutput extends DataOutput {
 
     @Override
     default void writeBytes(String s) throws IOException {
-        if (s.length() == 0) {
-            return;
-        }
-        for (char c : s.toCharArray()) write(c);
+        if (!s.isEmpty()) for (char c : s.toCharArray()) write(c);
     }
 
     @Override

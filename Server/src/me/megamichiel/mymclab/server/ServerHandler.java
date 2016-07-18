@@ -11,8 +11,8 @@ import me.megamichiel.mymclab.packet.messaging.MessagePacket;
 import me.megamichiel.mymclab.packet.player.StatisticPacket;
 import me.megamichiel.mymclab.perm.DefaultPermission;
 import me.megamichiel.mymclab.perm.GroupManager;
+import me.megamichiel.mymclab.server.util.IConfig;
 import me.megamichiel.mymclab.server.util.LockArrayList;
-import me.megamichiel.mymclab.server.util.MapConfig;
 import me.megamichiel.mymclab.util.Encryption;
 import me.megamichiel.mymclab.util.Reporter;
 
@@ -56,7 +56,7 @@ public abstract class ServerHandler implements MyMCLabServer, Runnable, Reporter
         this(networkHandler, statisticManager, (a, b) -> new ConsoleHandler(a::add, b::add));
     }
 
-    public boolean enable(MapConfig config) {
+    public boolean enable(IConfig config) {
         if (groupManager.enable(config)) {
             networkHandler.onEnable();
             statsRefreshDelay = config.getInt("stats-refresh-delay", 2);
