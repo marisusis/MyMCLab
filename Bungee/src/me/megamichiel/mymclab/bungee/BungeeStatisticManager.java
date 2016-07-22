@@ -5,7 +5,6 @@ import me.megamichiel.animationlib.placeholder.StringBundle;
 import me.megamichiel.mymclab.server.ServerHandler;
 import me.megamichiel.mymclab.server.StatisticManager;
 import me.megamichiel.mymclab.server.util.DynamicString;
-import me.megamichiel.mymclab.server.util.IConfig;
 import net.md_5.bungee.api.connection.ProxiedPlayer;
 import net.md_5.bungee.api.event.PlayerDisconnectEvent;
 import net.md_5.bungee.api.plugin.Listener;

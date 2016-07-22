@@ -34,7 +34,7 @@ public abstract class StatisticManager {
     
     public abstract Object createStringContext();
     protected abstract DynamicString parseString(String str);
-    protected DynamicString[] parseStrings(String[] strings) {
+    private DynamicString[] parseStrings(String[] strings) {
         DynamicString[] result = new DynamicString[strings.length];
         for (int i = 0; i < strings.length; i++)
             result[i] = parseString(strings[i]);

@@ -3,7 +3,7 @@ package me.megamichiel.mymclab.bukkit;
 import me.megamichiel.animationlib.Nagger;
 import me.megamichiel.animationlib.config.AbstractConfig;
 import me.megamichiel.animationlib.config.ConfigManager;
-import me.megamichiel.animationlib.config.YamlConfig;
+import me.megamichiel.animationlib.config.type.YamlConfig;
 import me.megamichiel.animationlib.placeholder.PlaceholderContext;
 import me.megamichiel.mymclab.api.Client;
 import me.megamichiel.mymclab.api.ClientListener;
@@ -279,7 +279,7 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         }
     }
 
-    static class BukkitConfig extends AbstractConfig implements IConfig {
+    private static class BukkitConfig extends AbstractConfig implements IConfig {
 
         private final AbstractConfig parent;
 
@@ -290,7 +290,6 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         BukkitConfig() {
             parent = new YamlConfig();
         }
-
 
         @Override
         public void set(String path, Object value) {
@@ -303,7 +302,7 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         }
 
         @Override
-        public void setAll(Map<String, Object> map) {
+        public void setAll(Map<?, ?> map) {
             parent.setAll(map);
         }
 

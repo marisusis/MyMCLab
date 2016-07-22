@@ -1,9 +1,9 @@
 package me.megamichiel.mymclab.bungee;
 
 import me.megamichiel.animationlib.Nagger;
-import me.megamichiel.animationlib.config.ConfigManager;
 import me.megamichiel.animationlib.config.AbstractConfig;
-import me.megamichiel.animationlib.config.YamlConfig;
+import me.megamichiel.animationlib.config.ConfigManager;
+import me.megamichiel.animationlib.config.type.YamlConfig;
 import me.megamichiel.mymclab.api.Client;
 import me.megamichiel.mymclab.api.ClientListener;
 import me.megamichiel.mymclab.api.MyMCLabServer;
@@ -20,7 +20,10 @@ import net.md_5.bungee.event.EventHandler;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -107,7 +110,7 @@ public class MyMCLabPlugin extends Plugin implements MyMCLabServer, Listener, Na
         getLogger().warning(thr.getClass().getName() + ": " + thr.getMessage());
     }
 
-    static class BungeeConfig extends AbstractConfig implements IConfig {
+    private static class BungeeConfig extends AbstractConfig implements IConfig {
 
         private final AbstractConfig parent;
 
@@ -130,7 +133,7 @@ public class MyMCLabPlugin extends Plugin implements MyMCLabServer, Listener, Na
         }
 
         @Override
-        public void setAll(Map<String, Object> map) {
+        public void setAll(Map<?, ?> map) {
             parent.setAll(map);
         }
 

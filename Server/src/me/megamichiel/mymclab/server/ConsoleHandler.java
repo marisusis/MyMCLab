@@ -8,6 +8,7 @@ import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
+import org.apache.logging.log4j.message.Message;
 
 import java.lang.reflect.Method;
 import java.util.function.Consumer;
@@ -50,10 +51,12 @@ public class ConsoleHandler {
                     } catch (Exception ex) {
                         return;
                     }
-                    if (log.getMessage() != null)
+                    Message message = log.getMessage();
+                    String formattedMessage;
+                    if (message != null && (formattedMessage = message.getFormattedMessage()) != null)
                         messages.accept(new MessagePacket.Message(
                                 at, toLogLevel(log.getLevel()),
-                                ColoredText.parse(log.getMessage().getFormattedMessage(), true)
+                                ColoredText.parse(formattedMessage, true)
                         ));
                     Throwable thrown = log.getThrown();
                     if (thrown != null) errors.accept(new ErrorPacket.Error(at, thrown));
