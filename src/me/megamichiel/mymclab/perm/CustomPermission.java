@@ -20,7 +20,12 @@ public final class CustomPermission implements IPermission {
 
     @Override
     public boolean equals(Object obj) {
-        return obj instanceof CustomPermission && ((CustomPermission) obj).getName().equals(name);
+        return obj instanceof CustomPermission && ((CustomPermission) obj).name.equals(name);
+    }
+
+    @Override
+    public int hashCode() {
+        return name.hashCode();
     }
 
     @Override

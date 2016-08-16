@@ -2,6 +2,8 @@ password: password
 
 stats-refresh-delay: 2
 
+motd: '&7A MyMCLab Server'
+
 player-info:
 - text: '&aServer: %player_server%'
   type: text

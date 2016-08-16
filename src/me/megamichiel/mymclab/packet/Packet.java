@@ -42,7 +42,9 @@ public abstract class Packet {
             PromptRequestPacket.class,
             PromptResponsePacket.class,
             StatisticClickPacket.class,
-            StatisticPacket.class
+            StatisticPacket.class,
+
+            ServerStatusPacket.class
     };
     private static final Constructor<?>[] CONSTRUCTORS = new Constructor<?>[VALUES.length];
 

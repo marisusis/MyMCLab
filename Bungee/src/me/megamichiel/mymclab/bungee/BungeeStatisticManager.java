@@ -33,7 +33,7 @@ public class BungeeStatisticManager extends StatisticManager {
 
     @Override
     protected DynamicString parseString(String str) {
-        return new BungeeString(str);
+        return str == null ? null : new BungeeString(str);
     }
 
     @Override
@@ -85,6 +85,11 @@ public class BungeeStatisticManager extends StatisticManager {
                     return bundle == null ? null : bundle.toString(who);
                 };
             });
+        }
+
+        @Override
+        public boolean isDynamic() {
+            return bundle.containsPlaceholders();
         }
     }
 

@@ -8,6 +8,9 @@ password: password
 #    permissions:
 #    - '-default.view.console'
 
+#The motd to show to clients in the server list (message below name)
+motd: '&7A MyMCLab Server'
+
 #The delay (in seconds) between each time player info is sent
 stats-refresh-delay: 2
 #The player info section. Each new entry requires a dash (-) in front of it, like below

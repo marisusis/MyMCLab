@@ -11,4 +11,6 @@ public interface DynamicString {
     void colorAmpersands();
 
     void replacePrompts(Pattern pattern, Supplier<Map<String, String>> promptValues);
+
+    boolean isDynamic();
 }

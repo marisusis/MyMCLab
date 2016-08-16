@@ -1,13 +1,13 @@
 package me.megamichiel.mymclab.server;
 
 import me.megamichiel.mymclab.MyMCLab;
-import me.megamichiel.mymclab.api.ClientListener;
 import me.megamichiel.mymclab.io.ByteArrayProtocolInput;
 import me.megamichiel.mymclab.io.ByteArrayProtocolOutput;
 import me.megamichiel.mymclab.io.ProtocolInput;
 import me.megamichiel.mymclab.packet.BatchPacket;
 import me.megamichiel.mymclab.packet.Packet;
 import me.megamichiel.mymclab.packet.PermissionPacket;
+import me.megamichiel.mymclab.packet.ServerStatusPacket;
 import me.megamichiel.mymclab.packet.player.StatisticPacket;
 import me.megamichiel.mymclab.perm.DefaultPermission;
 import me.megamichiel.mymclab.perm.Group;
@@ -94,28 +94,7 @@ public class ClientProcessor implements Runnable {
         if (stream.available() > header.length
                 && Arrays.equals(stream.readFully(header.length), header)) {
             int available = stream.available();
-            if (available == 2) {
-                short version = stream.readShort(),
-                        myVersion = MyMCLab.PROTOCOL_VERSION;
-                if (version != myVersion) {
-                    ByteArrayProtocolOutput out = new ByteArrayProtocolOutput();
-                    out.write(MyMCLab.HEADER);
-                    out.writeByte(version < myVersion ? -1 : 1);
-                    channel.writeAndClose(out.toByteArray());
-                    return version < myVersion ? State.OUTDATED_CLIENT : State.OUTDATED_SERVER;
-                }
-                client = new ClientImpl(channel, server);
-                channel.clearHandlers();
-
-                ByteArrayProtocolOutput out = new ByteArrayProtocolOutput();
-                out.write(MyMCLab.HEADER);
-                out.writeByte(0);
-                byte[] encoded = server.getKeyPair().getPublic().getEncoded();
-                out.writeVarInt(encoded.length);
-                out.write(encoded);
-                channel.writeAndFlush(out.toByteArray());
-                return State.LOGIN;
-            } else if (client != null) {
+            if (client != null) {
                 byte[] decoded = stream.readFully(available);
                 decoded = Encryption.decryptData(server.getKeyPair().getPrivate(), decoded);
                 ByteArrayProtocolInput dataInput = new ByteArrayProtocolInput(decoded);
@@ -138,6 +117,45 @@ public class ClientProcessor implements Runnable {
                 }
                 disconnect("Incorrect password!");
                 return State.BAD_PASSWORD;
+            } else if (available >= 3) {
+                short version = stream.readShort(),
+                        myVersion = MyMCLab.PROTOCOL_VERSION;
+                channel.clearHandlers();
+                if (stream.readBoolean()) { // Ping
+                    ServerStatusPacket packet = new ServerStatusPacket(
+                            stream.readLong(), // ping id
+                            version == myVersion ? 0 : version < myVersion ? -1 : 1,
+                            server.getMotd(),
+                            server.getStatisticManager().getPlayers().size());
+                    ByteArrayProtocolOutput out = new ByteArrayProtocolOutput();
+                    out.write(MyMCLab.HEADER);
+                    out.write(packet.encode());
+                    channel.writeAndClose(out.toByteArray());
+                    return State.STATUS;
+                }
+                if (version != myVersion) {
+                    ByteArrayProtocolOutput out = new ByteArrayProtocolOutput();
+                    out.write(MyMCLab.HEADER);
+                    out.writeByte(version < myVersion ? -1 : 1);
+                    channel.writeAndClose(out.toByteArray());
+                    return version < myVersion ? State.OUTDATED_CLIENT : State.OUTDATED_SERVER;
+                }
+                client = new ClientImpl(channel, server);
+
+                ByteArrayProtocolOutput out = new ByteArrayProtocolOutput();
+                out.write(MyMCLab.HEADER);
+                out.writeByte(0);
+                byte[] encoded = server.getKeyPair().getPublic().getEncoded();
+                out.writeVarInt(encoded.length);
+                out.write(encoded);
+                channel.writeAndFlush(out.toByteArray());
+                return State.LOGIN;
+            } else if (available == 2) { // Old login (without ping boolean), so outdated
+                ByteArrayProtocolOutput out = new ByteArrayProtocolOutput();
+                out.write(MyMCLab.HEADER);
+                out.writeByte(-1);
+                channel.writeAndClose(out.toByteArray());
+                return State.OUTDATED_CLIENT;
             }
         }
         open = false;
@@ -192,6 +210,7 @@ public class ClientProcessor implements Runnable {
 
     public enum State {
         BAD_PROTOCOL, OUTDATED_CLIENT, OUTDATED_SERVER, BAD_PASSWORD, BAD_GROUP,
-        LOGIN, AUTHENTICATED
+        LOGIN, AUTHENTICATED,
+        STATUS
     }
 }

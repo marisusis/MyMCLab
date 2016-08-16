@@ -11,8 +11,10 @@ import me.megamichiel.mymclab.packet.messaging.MessagePacket;
 import me.megamichiel.mymclab.packet.player.StatisticPacket;
 import me.megamichiel.mymclab.perm.DefaultPermission;
 import me.megamichiel.mymclab.perm.GroupManager;
+import me.megamichiel.mymclab.server.util.DynamicString;
 import me.megamichiel.mymclab.server.util.IConfig;
 import me.megamichiel.mymclab.server.util.LockArrayList;
+import me.megamichiel.mymclab.util.ColoredText;
 import me.megamichiel.mymclab.util.Encryption;
 import me.megamichiel.mymclab.util.Reporter;
 
@@ -22,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 public abstract class ServerHandler implements MyMCLabServer, Runnable, Reporter {
 
@@ -32,6 +35,7 @@ public abstract class ServerHandler implements MyMCLabServer, Runnable, Reporter
     private final GroupsManager groupManager;
 
     private final StatisticManager statisticManager;
+    private Supplier<ColoredText> motd;
 
     private final KeyPair keyPair = Encryption.generateAsymmetricKey();
 
@@ -63,6 +67,21 @@ public abstract class ServerHandler implements MyMCLabServer, Runnable, Reporter
             if (statsRefreshDelay < 1) statsRefreshDelay = 1;
             consoleHandler.enable();
             statisticManager.load(config);
+            DynamicString motd = statisticManager.parseString(config.getString("motd"));
+            if (motd != null) {
+                motd.colorAmpersands();
+                if (motd.isDynamic())
+                    this.motd = () -> ColoredText.parse(motd.toString(null, null), false);
+                else {
+                    ColoredText txt = ColoredText.parse(motd.toString(null, null), false);
+                    this.motd = () -> txt;
+                }
+            } else {
+                ColoredText txt = new ColoredText()
+                        .color(ColoredText.EnumColor.DARK_GRAY)
+                        .text("A MyMCLab Server");
+                this.motd = () -> txt;
+            }
             return true;
         }
         return false;
@@ -171,5 +190,9 @@ public abstract class ServerHandler implements MyMCLabServer, Runnable, Reporter
 
     public NetworkHandler getNetworkHandler() {
         return networkHandler;
+    }
+
+    public ColoredText getMotd() {
+        return motd.get();
     }
 }

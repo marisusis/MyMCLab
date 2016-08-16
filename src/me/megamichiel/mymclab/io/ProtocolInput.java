@@ -46,14 +46,14 @@ public interface ProtocolInput extends DataInput {
 
     @Override
     default long readLong() throws IOException {
-        return ((long) readByte() << 56)
-                | ((long) readByte() << 48)
-                | ((long) readByte() << 40)
-                | ((long) readByte() << 32)
-                | ((long) readByte() << 24)
-                | ((long) readByte() << 16)
-                | ((long) readByte() << 8)
-                | ((long) readByte() & 0xFFL);
+        return ((long) readByte() << 56) |
+                ((long) readByte() << 48) |
+                ((long) readByte() << 40) |
+                ((long) readByte() << 32) |
+                ((long) readByte() << 24) |
+                ((long) readByte() << 16) |
+                ((long) readByte() << 8) |
+                ((long) readByte() & 0xFFL);
     }
 
     @Override

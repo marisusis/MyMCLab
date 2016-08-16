@@ -1,10 +1,11 @@
 package me.megamichiel.mymclab.bukkit;
 
-import me.megamichiel.animationlib.Nagger;
+import me.megamichiel.animationlib.bukkit.PipelineListener;
 import me.megamichiel.animationlib.config.AbstractConfig;
 import me.megamichiel.animationlib.config.ConfigManager;
 import me.megamichiel.animationlib.config.type.YamlConfig;
 import me.megamichiel.animationlib.placeholder.PlaceholderContext;
+import me.megamichiel.animationlib.util.LoggerNagger;
 import me.megamichiel.mymclab.api.Client;
 import me.megamichiel.mymclab.api.ClientListener;
 import me.megamichiel.mymclab.api.MyMCLabServer;
@@ -30,10 +31,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.AsyncPlayerChatEvent;
-import org.bukkit.event.player.PlayerCommandPreprocessEvent;
-import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.*;
 import org.bukkit.event.server.ServerCommandEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -48,7 +46,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer, Nagger {
+public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer, LoggerNagger {
 
     private static final String DONT_MIND_ME_I_HAVE_NO_USE = "%%__USER__%%";
 
@@ -131,10 +129,6 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
                     Collections.singletonList(serverHandler.getStatisticManager()
                             .createStatistic(client, player, context, true))
             ));
-        if (update != null && player.hasPermission("mymclab.seeupdate")) {
-            String msg = ChatColor.GREEN + "[MyMCLab] A new version is available! (Current version: \" + current + \", new version: \" + update + \")";
-            player.sendMessage(msg);
-        }
     }
 
     @EventHandler
@@ -173,16 +167,6 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
 
     public BukkitConfig getConfiguration() {
         return config.getConfig();
-    }
-
-    @Override
-    public void nag(String s) {
-        getLogger().warning(s);
-    }
-
-    @Override
-    public void nag(Throwable throwable) {
-        getLogger().warning(throwable.toString());
     }
 
     void reload() {
@@ -226,8 +210,6 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         return serverHandler.getNetworkHandler();
     }
 
-    private String update;
-
     private void checkForUpdate() {
         new BukkitRunnable() {
             @Override
@@ -243,14 +225,18 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
                         nag("Failed to check for updates: Unknown page format!");
                     }
                     String version = matcher.group(2);
-                    update = current.equals(version) ? null : version;
+                    if (!current.equals(version)) {
+                        String update = ChatColor.GREEN + "[MyMCLab] A new version is available! (Current version: \"" + current + "\", new version: \"" + version + "\")";
+                        getLogger().info("A new version is available! (Current version: " + current + ", new version: " + update + ")");
+                        PipelineListener.newPipeline(PlayerJoinEvent.class, MyMCLabPlugin.this)
+                                .map(PlayerEvent::getPlayer)
+                                .filter(p -> p.hasPermission("mymclab.seeupdate"))
+                                .forEach(p -> p.sendMessage(update));
+                    }
                     scanner.close();
                 } catch (Exception ex) {
                     nag("Failed to check for updates:");
                     nag(ex);
-                }
-                if (update != null) {
-                    getLogger().info("A new version is available! (Current version: " + current + ", new version: " + update + ")");
                 }
             }
         }.runTaskAsynchronously(this);

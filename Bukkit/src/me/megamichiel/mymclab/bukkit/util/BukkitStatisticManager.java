@@ -30,7 +30,7 @@ public class BukkitStatisticManager extends StatisticManager {
 
     @Override
     protected DynamicString parseString(String str) {
-        return new BukkitDynamicString(StringBundle.parse(plugin, str));
+        return str == null ? null : new BukkitDynamicString(StringBundle.parse(plugin, str));
     }
 
     @Override
@@ -84,6 +84,11 @@ public class BukkitStatisticManager extends StatisticManager {
                     return bundle == null ? null : bundle.toString(who);
                 };
             });
+        }
+
+        @Override
+        public boolean isDynamic() {
+            return bundle.containsPlaceholders();
         }
     }
 }
