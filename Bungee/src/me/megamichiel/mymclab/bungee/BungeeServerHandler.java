@@ -15,7 +15,7 @@ public class BungeeServerHandler extends ServerHandler {
     private final Thread mainThread = Thread.currentThread();
 
     BungeeServerHandler(MyMCLabPlugin plugin) {
-        super(BungeeNetworkHandler::new, server -> new BungeeStatisticManager(plugin, server),
+        super(plugin.getLogger(), BungeeNetworkHandler::new, server -> new BungeeStatisticManager(plugin, server),
                 (a, b) -> new ConsoleHandler(a::add, b::add, ProxyServer.getInstance().getLogger()));
         this.plugin = plugin;
         disableFeatures(DefaultPermission.VIEW_CHAT, DefaultPermission.INPUT_CHAT);

@@ -77,7 +77,8 @@ public interface ProtocolOutput extends DataOutput {
 
     @Override
     default void writeBytes(String s) throws IOException {
-        if (!s.isEmpty()) for (char c : s.toCharArray()) write(c);
+        for (int i = 0, length = s.length(); i < length; i++)
+            write(s.charAt(i));
     }
 
     @Override
@@ -92,7 +93,7 @@ public interface ProtocolOutput extends DataOutput {
         int c;
 
         /* use charAt instead of copying String to char array */
-        for (int i = 0; i < strlen; i++) {
+        for (int i = strlen; i-- != 0;) {
             c = s.charAt(i);
             if ((c >= 0x0001) && (c <= 0x007F)) utflen++;
             else if (c > 0x07FF) utflen += 3;
@@ -105,14 +106,7 @@ public interface ProtocolOutput extends DataOutput {
 
         writeShort(utflen);
 
-        int i = 0;
-        for (; i < strlen; i++) {
-            c = s.charAt(i);
-            if (!((c >= 0x0001) && (c <= 0x007F))) break;
-            write(c);
-        }
-
-        for (;i < strlen; i++){
+        for (int i = 0; i < strlen; i++) {
             c = s.charAt(i);
             if ((c >= 0x0001) && (c <= 0x007F)) {
                 write(c);

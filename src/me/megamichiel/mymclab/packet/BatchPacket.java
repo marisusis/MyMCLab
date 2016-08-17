@@ -21,13 +21,13 @@ public class BatchPacket extends Packet {
     public BatchPacket(ProtocolInput data) throws IOException {
         super(ID);
         packets = new Packet[size = data.readVarInt()];
-        for (int i = 0; i < size; i++) packets[i] = createPacket(data);
+        for (int i = 0; i != size; i++) packets[i] = createPacket(data);
     }
 
     @Override
     protected void encode(ProtocolOutput data) throws IOException {
         data.writeVarInt(size);
-        for (int i = 0; i < size; i++) data.write(packets[i].encode());
+        for (int i = 0; i != size; i++) data.write(packets[i].encode());
     }
 
     public Packet[] getPackets() {

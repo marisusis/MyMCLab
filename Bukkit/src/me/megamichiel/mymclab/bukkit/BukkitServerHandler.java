@@ -10,7 +10,7 @@ public class BukkitServerHandler extends ServerHandler {
     private final MyMCLabPlugin plugin;
 
     public BukkitServerHandler(MyMCLabPlugin plugin) {
-        super(MyMCLabPlugin::determineNetworkHandler,
+        super(plugin.getLogger(), MyMCLabPlugin::determineNetworkHandler,
                 serverHandler -> new BukkitStatisticManager(plugin, serverHandler));
         this.plugin = plugin;
     }

@@ -11,6 +11,7 @@ import me.megamichiel.mymclab.packet.messaging.MessagePacket;
 import me.megamichiel.mymclab.packet.player.StatisticPacket;
 import me.megamichiel.mymclab.perm.DefaultPermission;
 import me.megamichiel.mymclab.perm.GroupManager;
+import me.megamichiel.mymclab.server.util.AnimatedString;
 import me.megamichiel.mymclab.server.util.DynamicString;
 import me.megamichiel.mymclab.server.util.IConfig;
 import me.megamichiel.mymclab.server.util.LockArrayList;
@@ -25,17 +26,19 @@ import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.logging.Logger;
 
 public abstract class ServerHandler implements MyMCLabServer, Runnable, Reporter {
 
     private static final MessagePacket.Message[] MESSAGE_BUFFER = new MessagePacket.Message[100];
     private static final ErrorPacket.Error[] ERROR_BUFFER = new ErrorPacket.Error[100];
 
+    private final Logger logger;
     private final NetworkHandler networkHandler;
     private final GroupsManager groupManager;
 
     private final StatisticManager statisticManager;
-    private Supplier<ColoredText> motd;
+    private final AnimatedString<Supplier<ColoredText>> motd;
 
     private final KeyPair keyPair = Encryption.generateAsymmetricKey();
 
@@ -45,19 +48,32 @@ public abstract class ServerHandler implements MyMCLabServer, Runnable, Reporter
 
     private final ConsoleHandler consoleHandler;
 
-    public ServerHandler(Function<ServerHandler, NetworkHandler> networkHandler,
+    public ServerHandler(Logger logger,
+                         Function<ServerHandler, NetworkHandler> networkHandler,
                          Function<ServerHandler, StatisticManager> statisticManager,
                          BiFunction<List<MessagePacket.Message>, List<ErrorPacket.Error>,
                                  ConsoleHandler> consoleHandler) {
+        this.logger = logger;
         this.networkHandler = networkHandler.apply(this);
         groupManager = new GroupsManager(this);
         this.statisticManager = statisticManager.apply(this);
         this.consoleHandler = consoleHandler.apply(consoleMessages, errors);
+        ColoredText def = new ColoredText()
+                .color(ColoredText.EnumColor.DARK_GRAY)
+                .text("A MyMCLab server");
+        motd = new AnimatedString<>(s -> {
+            DynamicString ds = this.statisticManager.parseString(s);
+            ds.colorAmpersands();
+            if (ds.isDynamic())
+                return () -> ColoredText.parse(ds.toString(null, null), false);
+            ColoredText txt = ColoredText.parse(ds.toString(null, null), false);
+            return () -> txt;
+        }, () -> def);
     }
 
-    public ServerHandler(Function<ServerHandler, NetworkHandler> networkHandler,
+    public ServerHandler(Logger logger, Function<ServerHandler, NetworkHandler> networkHandler,
                          Function<ServerHandler, StatisticManager> statisticManager) {
-        this(networkHandler, statisticManager, (a, b) -> new ConsoleHandler(a::add, b::add));
+        this(logger, networkHandler, statisticManager, (a, b) -> new ConsoleHandler(a::add, b::add));
     }
 
     public boolean enable(IConfig config) {
@@ -67,21 +83,7 @@ public abstract class ServerHandler implements MyMCLabServer, Runnable, Reporter
             if (statsRefreshDelay < 1) statsRefreshDelay = 1;
             consoleHandler.enable();
             statisticManager.load(config);
-            DynamicString motd = statisticManager.parseString(config.getString("motd"));
-            if (motd != null) {
-                motd.colorAmpersands();
-                if (motd.isDynamic())
-                    this.motd = () -> ColoredText.parse(motd.toString(null, null), false);
-                else {
-                    ColoredText txt = ColoredText.parse(motd.toString(null, null), false);
-                    this.motd = () -> txt;
-                }
-            } else {
-                ColoredText txt = new ColoredText()
-                        .color(ColoredText.EnumColor.DARK_GRAY)
-                        .text("A MyMCLab Server");
-                this.motd = () -> txt;
-            }
+            motd.load(logger, config, "motd");
             return true;
         }
         return false;
@@ -193,6 +195,6 @@ public abstract class ServerHandler implements MyMCLabServer, Runnable, Reporter
     }
 
     public ColoredText getMotd() {
-        return motd.get();
+        return motd.next().get();
     }
 }

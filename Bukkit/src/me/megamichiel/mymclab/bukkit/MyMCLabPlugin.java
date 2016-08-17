@@ -173,6 +173,7 @@ public class MyMCLabPlugin extends JavaPlugin implements Listener, MyMCLabServer
         packetTask.cancel();
 
         reloadConfig();
+        serverHandler.disable();
         if (!serverHandler.enable(getConfiguration())) {
             getServer().getPluginManager().disablePlugin(this);
             return;

@@ -10,6 +10,11 @@ password: password
 
 #The motd to show to clients in the server list (message below name)
 motd: '&7A MyMCLab Server'
+#You can also animate this, for example:
+#motd:
+#  1: '&6A MyMCLab Server'
+#  2: '&bA MyMCLab Server'
+#  3-6: '&eA MyMCLab Server'
 
 #The delay (in seconds) between each time player info is sent
 stats-refresh-delay: 2

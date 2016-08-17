@@ -59,8 +59,7 @@ public abstract class Packet {
 
     public static Packet createPacket(ProtocolInput stream) throws IOException {
         try {
-            int id = stream.readUnsignedByte();
-            return (Packet) CONSTRUCTORS[id].newInstance(stream);
+            return (Packet) CONSTRUCTORS[stream.readUnsignedByte()].newInstance(stream);
         } catch (InvocationTargetException ex) {
             if (ex.getCause() instanceof IOException)
                 throw (IOException) ex.getCause();

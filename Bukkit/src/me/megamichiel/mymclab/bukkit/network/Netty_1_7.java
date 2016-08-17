@@ -1,12 +1,13 @@
 package me.megamichiel.mymclab.bukkit.network;
 
-import me.megamichiel.mymclab.MyMCLab;
 import me.megamichiel.mymclab.api.ClientListener;
-import me.megamichiel.mymclab.io.ByteArrayProtocolOutput;
 import me.megamichiel.mymclab.io.ProtocolInputStream;
 import me.megamichiel.mymclab.packet.Packet;
 import me.megamichiel.mymclab.perm.IPermission;
-import me.megamichiel.mymclab.server.*;
+import me.megamichiel.mymclab.server.ClientImpl;
+import me.megamichiel.mymclab.server.ClientProcessor;
+import me.megamichiel.mymclab.server.NetworkHandler;
+import me.megamichiel.mymclab.server.ServerHandler;
 import me.megamichiel.mymclab.server.util.ChannelWrapper;
 import net.minecraft.util.io.netty.buffer.ByteBuf;
 import net.minecraft.util.io.netty.buffer.ByteBufInputStream;

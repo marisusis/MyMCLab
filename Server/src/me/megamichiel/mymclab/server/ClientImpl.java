@@ -114,7 +114,7 @@ public class ClientImpl implements Client {
                             message.getType() == RawMessagePacket.RawMessageType.CHAT);
                     break;
                 default:
-                    disconnect("Bad raw message: " + message.getType().name());
+                    disconnect("Bad raw message: " + message.getType());
                     break;
             }
         } else if (packet instanceof StatisticClickPacket)

@@ -1,5 +1,5 @@
 <h1 style="margin: 0px;">MyMCLab</h1>
-Current Version: <b>1.3.0</b><br><br>
+Current Version: <b>1.3.1</b><br><br>
 
 <p>This is the source code of MyMCLab, server-side.
 The main src/ directory contains an 'abstract' version of the project;

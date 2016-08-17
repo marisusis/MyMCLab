@@ -25,10 +25,10 @@ public class ColoredText {
                     values.add(new String(b, Packet.UTF_8));
                     break;
                 case 2:
-                    values.add(EnumFormat.values()[read >> 2]);
+                    values.add(EnumFormat.values()[read >>> 2]);
                     break;
                 case 3:
-                    values.add(EnumColor.values()[read >> 2]);
+                    values.add(EnumColor.values()[read >>> 2]);
                     break;
             }
         }
